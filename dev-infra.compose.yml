@@ -1,0 +1,322 @@
+# CodeHakam Development Infrastructure
+# Latest stable versions as of November 2025
+#
+# Usage:
+#   docker compose -f dev-infra.compose.yml up -d
+#   docker compose -f dev-infra.compose.yml --profile observability up -d
+#   docker compose -f dev-infra.compose.yml down
+#   docker compose -f dev-infra.compose.yml logs -f [service]
+
+networks:
+  codehakam:
+    driver: bridge
+    name: codehakam
+
+volumes:
+  postgres-data:
+  valkey-data:
+  rabbitmq-data:
+  minio-data:
+  mailhog-data:
+  prometheus-data:
+  grafana-data:
+
+services:
+  # ==========================================================================
+  # PostgreSQL 18 - Main Database
+  # ==========================================================================
+  postgres:
+    image: postgres:18-alpine
+    container_name: codehakam-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: codehakam
+      POSTGRES_USER: codehakam
+      POSTGRES_PASSWORD: dev_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - codehakam
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codehakam -d codehakam"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=2621kB"
+
+  # ==========================================================================
+  # Valkey 9 - Redis-Compatible Cache
+  # ==========================================================================
+  valkey:
+    image: valkey/valkey:9-alpine
+    container_name: codehakam-valkey
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey-data:/data
+    networks:
+      - codehakam
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command:
+      - "valkey-server"
+      - "--appendonly"
+      - "yes"
+      - "--appendfsync"
+      - "everysec"
+      - "--maxmemory"
+      - "512mb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+      - "--save"
+      - "60"
+      - "1000"
+
+  # ==========================================================================
+  # RabbitMQ 4.2 - Message Queue
+  # ==========================================================================
+  rabbitmq:
+    image: rabbitmq:4.2-management-alpine
+    container_name: codehakam-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: codehakam
+      RABBITMQ_DEFAULT_PASS: dev_password
+      RABBITMQ_DEFAULT_VHOST: codehakam
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit log_levels [{connection,error},{default,warning}]"
+    ports:
+      - "5672:5672" # AMQP
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - codehakam
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ==========================================================================
+  # MinIO - S3-Compatible Storage
+  # ==========================================================================
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: codehakam-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+    ports:
+      - "9000:9000" # API
+      - "9001:9001" # Console
+    volumes:
+      - minio-data:/data
+    networks:
+      - codehakam
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # MinIO bucket setup
+  minio-setup:
+    image: minio/mc:latest
+    container_name: codehakam-minio-setup
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - codehakam
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      mc mb myminio/submissions --ignore-existing;
+      mc mb myminio/problems --ignore-existing;
+      mc mb myminio/avatars --ignore-existing;
+      mc mb myminio/contest-files --ignore-existing;
+      mc anonymous set download myminio/avatars;
+      echo '✅ MinIO buckets created successfully';
+      exit 0;
+      "
+
+  # ==========================================================================
+  # MailHog - SMTP Testing Service
+  # ==========================================================================
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: codehakam-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP server
+      - "8025:8025" # Web UI
+    networks:
+      - codehakam
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8025"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================================================
+  # Prometheus - Metrics Collection (Optional)
+  # ==========================================================================
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    container_name: codehakam-prometheus
+    restart: unless-stopped
+    profiles: ["observability"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./config/prometheus.dev.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - codehakam
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================================================
+  # Grafana - Metrics Visualization (Optional)
+  # ==========================================================================
+  grafana:
+    image: grafana/grafana:12.2.1
+    container_name: codehakam-grafana
+    restart: unless-stopped
+    profiles: ["observability"]
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: http://localhost:3000
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - codehakam
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================================================
+  # Jaeger - Distributed Tracing (Optional)
+  # ==========================================================================
+  jaeger:
+    image: jaegertracing/all-in-one:1.74.0
+    container_name: codehakam-jaeger
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      COLLECTOR_ZIPKIN_HOST_PORT: ":9411"
+    ports:
+      - "6831:6831/udp" # Jaeger compact thrift
+      - "16686:16686" # Jaeger UI
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    networks:
+      - codehakam
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:14269/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+# ==========================================================================
+# Quick Reference
+# ==========================================================================
+# Start core services:
+#   docker compose -f dev-infra.compose.yml up -d
+#
+# Start with observability:
+#   docker compose -f dev-infra.compose.yml --profile observability up -d
+#
+# View logs:
+#   docker compose -f dev-infra.compose.yml logs -f
+#   docker compose -f dev-infra.compose.yml logs -f postgres
+#
+# Stop all:
+#   docker compose -f dev-infra.compose.yml down
+#
+# Remove all data (CAUTION):
+#   docker compose -f dev-infra.compose.yml down -v
+#
+# Check health:
+#   docker compose -f dev-infra.compose.yml ps
+#
+# ==========================================================================
+# Service URLs & Credentials
+# ==========================================================================
+# PostgreSQL 18:  localhost:5432 (user: codehakam, pass: dev_password, db: codehakam)
+#                 Note: Each service creates its own schema and user via migrations
+# Valkey 9:       localhost:6379 (no auth)
+# RabbitMQ 4.2:   localhost:5672 (user: codehakam, pass: dev_password)
+# RabbitMQ UI:    http://localhost:15672
+# MinIO API:      http://localhost:9000 (user: minioadmin, pass: minioadmin)
+# MinIO Console:  http://localhost:9001
+# MailHog SMTP:   localhost:1025 (no auth)
+# MailHog UI:     http://localhost:8025 (view emails)
+#
+# With --profile observability:
+# Prometheus:     http://localhost:9090
+# Grafana:        http://localhost:3000 (admin/admin)
+# Jaeger UI:      http://localhost:16686
+#
+# ==========================================================================
+# Version Info
+# ==========================================================================
+# PostgreSQL: 18 (Sept 2025 - latest stable, new features and performance improvements)
+# Valkey:     9 (Redis-compatible, open-source fork, latest stable)
+# RabbitMQ:   4.2 (Latest stable with stream improvements and better performance)
+# MinIO:      RELEASE.2025-09-07T16-13-09Z (S3-compatible for development)
+# MailHog:    v1.0.1 (SMTP testing - catch all emails in development)
+# Prometheus: 3.7.3 (Latest stable - Nov 2025)
+# Grafana:    12.2.1 (Latest stable - Nov 2025)
+# Jaeger:     1.74.0 (Latest stable - Oct 2025)
