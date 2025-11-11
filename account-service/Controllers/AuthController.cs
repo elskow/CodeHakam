@@ -127,7 +127,7 @@ public class AuthController(IAuthService authService, IUserService userService, 
 
         if (!success)
         {
-            return BadRequest(ApiResponse<object>.ErrorResponse(error!));
+            return Unauthorized(ApiResponse<object>.ErrorResponse(error!));
         }
 
         return Ok(ApiResponse<string>.SuccessResponse("Logged out successfully", "Logged out successfully"));

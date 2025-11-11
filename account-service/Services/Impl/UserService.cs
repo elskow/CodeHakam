@@ -1,5 +1,6 @@
 using AccountService.Data;
 using AccountService.DTOs;
+using AccountService.Enums;
 using AccountService.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -179,12 +180,14 @@ public sealed class UserService(ApplicationDbContext context, ILogger<UserServic
 
         if (request.LanguagePreference != null)
         {
-            settings.LanguagePreference = request.LanguagePreference;
+            // Normalize to lowercase for consistency
+            settings.LanguagePreference = request.LanguagePreference.ToLower();
         }
 
         if (request.Theme != null)
         {
-            settings.Theme = request.Theme;
+            // Normalize to lowercase for consistency
+            settings.Theme = request.Theme.ToLower();
         }
 
         if (request.EmailNotifications.HasValue)
@@ -199,7 +202,8 @@ public sealed class UserService(ApplicationDbContext context, ILogger<UserServic
 
         if (request.SolutionVisibility != null)
         {
-            settings.SolutionVisibility = request.SolutionVisibility;
+            // Normalize to lowercase for consistency
+            settings.SolutionVisibility = request.SolutionVisibility.ToLower();
         }
 
         if (request.ShowRating.HasValue)

@@ -18,6 +18,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using StackExchange.Redis;
+using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace AccountService;
 
@@ -238,6 +239,9 @@ public class Program
                 }
             });
 
+            // Use lowercase URLs in Swagger
+            options.DocumentFilter<LowercaseDocumentFilter>();
+
             options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {
                 Description =
@@ -277,6 +281,8 @@ public class Program
             {
                 options.SwaggerEndpoint("/swagger/v1/swagger.json", "Account Service API v1");
                 options.RoutePrefix = "swagger";
+                options.DocumentTitle = "CodeHakam Account Service API";
+                options.DisplayRequestDuration();
             });
         }
 
@@ -326,5 +332,25 @@ public class Program
         Log.Information("Starting Account Service on port 3001");
 
         app.Run();
+    }
+}
+
+/// <summary>
+/// Swagger document filter to convert all URLs to lowercase
+/// </summary>
+public class LowercaseDocumentFilter : IDocumentFilter
+{
+    public void Apply(OpenApiDocument swaggerDoc, DocumentFilterContext context)
+    {
+        var paths = swaggerDoc.Paths.ToDictionary(
+            entry => entry.Key.ToLowerInvariant(),
+            entry => entry.Value
+        );
+
+        swaggerDoc.Paths.Clear();
+        foreach (var path in paths)
+        {
+            swaggerDoc.Paths.Add(path.Key, path.Value);
+        }
     }
 }

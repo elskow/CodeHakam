@@ -305,9 +305,14 @@ public class AuthService(
             var token = await context.RefreshTokens
                 .FirstOrDefaultAsync(rt => rt.UserId == userId && rt.TokenHash == tokenHash);
 
-            if (token is not { IsActive: true })
+            if (token is null)
             {
-                return (true, null);
+                return (false, "Invalid refresh token");
+            }
+
+            if (!token.IsActive)
+            {
+                return (false, "Refresh token is already revoked or expired");
             }
 
             token.RevokedAt = DateTime.UtcNow;

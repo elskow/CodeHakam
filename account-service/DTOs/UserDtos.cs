@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using AccountService.Validation;
 
 namespace AccountService.DTOs;
 
@@ -98,9 +99,11 @@ public record UserSettingsDto
 
 public record UpdateUserSettingsRequest
 {
+    [ValidLanguagePreference]
     [StringLength(10)]
     public string? LanguagePreference { get; init; }
 
+    [ValidTheme]
     [StringLength(20)]
     public string? Theme { get; init; }
 
@@ -108,11 +111,13 @@ public record UpdateUserSettingsRequest
 
     public bool? ContestReminders { get; init; }
 
+    [ValidSolutionVisibility]
     [StringLength(20)]
     public string? SolutionVisibility { get; init; }
 
     public bool? ShowRating { get; init; }
 
+    [ValidTimezone]
     [StringLength(50)]
     public string? Timezone { get; init; }
 }
