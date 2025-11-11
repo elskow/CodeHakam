@@ -20,6 +20,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<Permission> Permissions { get; set; }
     public new DbSet<UserRole> UserRoles { get; set; }
     public DbSet<RolePermission> RolePermissions { get; set; }
+    public DbSet<CasbinRule> CasbinRules { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
