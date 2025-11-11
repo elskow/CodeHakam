@@ -8,12 +8,14 @@ namespace AccountService.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public class AuthController(IAuthService authService, ILogger<AuthController> logger) : ControllerBase
+public class AuthController(IAuthService authService, IUserService userService, ILogger<AuthController> logger)
+    : ControllerBase
 {
     private readonly ILogger<AuthController> _logger = logger;
+    private readonly IUserService _userService = userService;
 
     /// <summary>
-    /// Register a new user account
+    ///     Register a new user account
     /// </summary>
     [HttpPost("register")]
     [ProducesResponseType(typeof(ApiResponse<RegisterResponse>), StatusCodes.Status201Created)]
@@ -51,7 +53,7 @@ public class AuthController(IAuthService authService, ILogger<AuthController> lo
     }
 
     /// <summary>
-    /// Login with email and password
+    ///     Login with email and password
     /// </summary>
     [HttpPost("login")]
     [ProducesResponseType(typeof(ApiResponse<LoginResponse>), StatusCodes.Status200OK)]
@@ -82,7 +84,7 @@ public class AuthController(IAuthService authService, ILogger<AuthController> lo
     }
 
     /// <summary>
-    /// Refresh access token using refresh token
+    ///     Refresh access token using refresh token
     /// </summary>
     [HttpPost("refresh")]
     [ProducesResponseType(typeof(ApiResponse<RefreshTokenResponse>), StatusCodes.Status200OK)]
@@ -106,7 +108,7 @@ public class AuthController(IAuthService authService, ILogger<AuthController> lo
     }
 
     /// <summary>
-    /// Logout and revoke refresh token
+    ///     Logout and revoke refresh token
     /// </summary>
     [HttpPost("logout")]
     [Authorize]
@@ -132,7 +134,7 @@ public class AuthController(IAuthService authService, ILogger<AuthController> lo
     }
 
     /// <summary>
-    /// Verify email with token
+    ///     Verify email with token
     /// </summary>
     [HttpGet("verify-email")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
@@ -155,7 +157,7 @@ public class AuthController(IAuthService authService, ILogger<AuthController> lo
     }
 
     /// <summary>
-    /// Request password reset
+    ///     Request password reset
     /// </summary>
     [HttpPost("forgot-password")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
@@ -181,7 +183,7 @@ public class AuthController(IAuthService authService, ILogger<AuthController> lo
     }
 
     /// <summary>
-    /// Reset password with token
+    ///     Reset password with token
     /// </summary>
     [HttpPost("reset-password")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
@@ -210,7 +212,7 @@ public class AuthController(IAuthService authService, ILogger<AuthController> lo
     }
 
     /// <summary>
-    /// Change password (requires authentication)
+    ///     Change password (requires authentication)
     /// </summary>
     [HttpPost("change-password")]
     [Authorize]
@@ -248,36 +250,7 @@ public class AuthController(IAuthService authService, ILogger<AuthController> lo
     }
 
     /// <summary>
-    /// Get current authenticated user info
-    /// </summary>
-    [HttpGet("me")]
-    [Authorize]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
-    public IActionResult GetCurrentUser()
-    {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var emailClaim = User.FindFirst(ClaimTypes.Email)?.Value;
-        var usernameClaim = User.FindFirst("username")?.Value;
-        var ratingClaim = User.FindFirst("rating")?.Value;
-        var isVerifiedClaim = User.FindFirst("is_verified")?.Value;
-        var roles = User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
-
-        var userData = new
-        {
-            id = userIdClaim,
-            email = emailClaim,
-            username = usernameClaim,
-            rating = ratingClaim != null && int.TryParse(ratingClaim, out var rating) ? rating : 0,
-            isVerified = isVerifiedClaim == "True",
-            roles
-        };
-
-        return Ok(ApiResponse<object>.SuccessResponse(userData));
-    }
-
-    /// <summary>
-    /// Health check endpoint
+    ///     Health check endpoint
     /// </summary>
     [HttpGet("health")]
     [ProducesResponseType(StatusCodes.Status200OK)]

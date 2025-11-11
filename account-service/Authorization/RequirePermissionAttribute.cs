@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using AccountService.DTOs;
 using Casbin;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -35,47 +36,41 @@ public sealed class RequirePermissionAttribute : Attribute, IAsyncAuthorizationF
 
         if (!user.Identity?.IsAuthenticated ?? true)
         {
-            context.Result = new UnauthorizedObjectResult(new
-            {
-                error = new
-                {
-                    code = "UNAUTHORIZED",
-                    message = "Authentication required"
-                }
-            });
+            context.Result = new UnauthorizedObjectResult(
+                ApiResponse<object>.ErrorResponse("Authentication required")
+            );
             return;
         }
 
-        var username = user.FindFirst(ClaimTypes.Name)?.Value;
+        var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var username = user.FindFirst("username")?.Value ?? user.Identity?.Name;
+
         if (string.IsNullOrEmpty(username))
         {
-            context.Result = new UnauthorizedObjectResult(new
-            {
-                error = new
-                {
-                    code = "INVALID_TOKEN",
-                    message = "Invalid authentication token"
-                }
-            });
+            context.Result = new UnauthorizedObjectResult(
+                ApiResponse<object>.ErrorResponse("Invalid authentication token")
+            );
             return;
         }
 
-        if (_allowSelf && IsSelfAccess(context, user))
+        // Allow self-access for /me endpoints (no route parameter) or when accessing own resource
+        if (_allowSelf && (IsMeEndpoint(context) || IsSelfAccess(context, user)))
         {
             return;
+        }
+
+        // Use username for Casbin enforcement (role is assigned to username)
+        if (string.IsNullOrEmpty(username))
+        {
+            username = userIdClaim; // Fallback to user ID if username not in claims
         }
 
         var enforcer = context.HttpContext.RequestServices.GetService<IEnforcer>();
         if (enforcer == null)
         {
-            context.Result = new ObjectResult(new
-            {
-                error = new
-                {
-                    code = "CONFIGURATION_ERROR",
-                    message = "Authorization system not configured"
-                }
-            })
+            context.Result = new ObjectResult(
+                ApiResponse<object>.ErrorResponse("Authorization system not configured")
+            )
             {
                 StatusCode = StatusCodes.Status500InternalServerError
             };
@@ -86,18 +81,19 @@ public sealed class RequirePermissionAttribute : Attribute, IAsyncAuthorizationF
 
         if (!allowed)
         {
-            context.Result = new ObjectResult(new
-            {
-                error = new
-                {
-                    code = "FORBIDDEN",
-                    message = "Insufficient permissions"
-                }
-            })
+            context.Result = new ObjectResult(
+                ApiResponse<object>.ErrorResponse("Insufficient permissions")
+            )
             {
                 StatusCode = StatusCodes.Status403Forbidden
             };
         }
+    }
+
+    private bool IsMeEndpoint(AuthorizationFilterContext context)
+    {
+        var path = context.HttpContext.Request.Path.Value?.ToLower() ?? string.Empty;
+        return path.Contains("/me");
     }
 
     private bool IsSelfAccess(AuthorizationFilterContext context, ClaimsPrincipal user)

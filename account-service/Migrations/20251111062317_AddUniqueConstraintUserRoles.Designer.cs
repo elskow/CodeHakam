@@ -3,6 +3,7 @@ using System;
 using AccountService.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AccountService.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251111062317_AddUniqueConstraintUserRoles")]
+    partial class AddUniqueConstraintUserRoles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -563,462 +566,462 @@ namespace AccountService.Migrations
                         new
                         {
                             Id = 1L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(6030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(910),
                             PermissionId = 1L,
                             RoleId = 1L
                         },
                         new
                         {
                             Id = 2L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(6230),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(1070),
                             PermissionId = 2L,
                             RoleId = 1L
                         },
                         new
                         {
                             Id = 3L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(6230),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(1070),
                             PermissionId = 3L,
                             RoleId = 1L
                         },
                         new
                         {
                             Id = 4L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(6230),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(1070),
                             PermissionId = 4L,
                             RoleId = 1L
                         },
                         new
                         {
                             Id = 5L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(6230),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(1080),
                             PermissionId = 5L,
                             RoleId = 1L
                         },
                         new
                         {
                             Id = 6L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(6230),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(1080),
                             PermissionId = 9L,
                             RoleId = 1L
                         },
                         new
                         {
                             Id = 7L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(6230),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(1080),
                             PermissionId = 10L,
                             RoleId = 1L
                         },
                         new
                         {
                             Id = 8L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7170),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(2310),
                             PermissionId = 1L,
                             RoleId = 2L
                         },
                         new
                         {
                             Id = 9L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7240),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(2450),
                             PermissionId = 2L,
                             RoleId = 2L
                         },
                         new
                         {
                             Id = 10L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7280),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(2560),
                             PermissionId = 3L,
                             RoleId = 2L
                         },
                         new
                         {
                             Id = 11L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7280),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(2560),
                             PermissionId = 4L,
                             RoleId = 2L
                         },
                         new
                         {
                             Id = 12L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7280),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(2560),
                             PermissionId = 5L,
                             RoleId = 2L
                         },
                         new
                         {
                             Id = 13L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7280),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(2560),
                             PermissionId = 6L,
                             RoleId = 2L
                         },
                         new
                         {
                             Id = 14L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7280),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(2560),
                             PermissionId = 7L,
                             RoleId = 2L
                         },
                         new
                         {
                             Id = 15L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7290),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(2560),
                             PermissionId = 9L,
                             RoleId = 2L
                         },
                         new
                         {
                             Id = 16L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7290),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(2570),
                             PermissionId = 10L,
                             RoleId = 2L
                         },
                         new
                         {
                             Id = 17L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7670),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(2990),
                             PermissionId = 1L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 18L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7670),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(2990),
                             PermissionId = 2L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 19L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7680),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3000),
                             PermissionId = 3L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 20L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7680),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3000),
                             PermissionId = 4L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 21L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7680),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3000),
                             PermissionId = 5L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 22L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7680),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3000),
                             PermissionId = 6L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 23L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7680),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3000),
                             PermissionId = 7L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 24L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7680),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3000),
                             PermissionId = 8L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 25L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7680),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3000),
                             PermissionId = 9L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 26L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7680),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3000),
                             PermissionId = 10L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 27L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7680),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3000),
                             PermissionId = 11L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 28L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7680),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3000),
                             PermissionId = 12L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 29L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7680),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3000),
                             PermissionId = 17L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 30L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(7680),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3010),
                             PermissionId = 18L,
                             RoleId = 3L
                         },
                         new
                         {
                             Id = 31L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8010),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3360),
                             PermissionId = 1L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 32L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8010),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 2L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 33L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8010),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 3L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 34L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8010),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 4L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 35L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8010),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 5L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 36L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8010),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 6L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 37L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8020),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 7L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 38L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8020),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 8L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 39L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8020),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 9L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 40L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8020),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 10L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 41L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8020),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 11L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 42L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8020),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 12L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 43L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8020),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 13L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 44L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8020),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3370),
                             PermissionId = 14L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 45L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8020),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3380),
                             PermissionId = 15L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 46L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8020),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3380),
                             PermissionId = 16L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 47L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8020),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3380),
                             PermissionId = 17L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 48L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8020),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3450),
                             PermissionId = 18L,
                             RoleId = 4L
                         },
                         new
                         {
                             Id = 49L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3450),
                             PermissionId = 1L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 50L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3460),
                             PermissionId = 2L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 51L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3460),
                             PermissionId = 3L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 52L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3460),
                             PermissionId = 4L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 53L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3460),
                             PermissionId = 5L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 54L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3460),
                             PermissionId = 6L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 55L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3460),
                             PermissionId = 7L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 56L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3460),
                             PermissionId = 8L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 57L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3460),
                             PermissionId = 9L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 58L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3460),
                             PermissionId = 10L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 59L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3460),
                             PermissionId = 11L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 60L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3460),
                             PermissionId = 12L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 61L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3470),
                             PermissionId = 13L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 62L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8030),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3470),
                             PermissionId = 14L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 63L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8040),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3470),
                             PermissionId = 15L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 64L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8040),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3470),
                             PermissionId = 16L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 65L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8040),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3470),
                             PermissionId = 17L,
                             RoleId = 5L
                         },
                         new
                         {
                             Id = 66L,
-                            CreatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 222, DateTimeKind.Utc).AddTicks(8040),
+                            CreatedAt = new DateTime(2025, 11, 11, 6, 23, 16, 754, DateTimeKind.Utc).AddTicks(3470),
                             PermissionId = 18L,
                             RoleId = 5L
                         });
@@ -1201,30 +1204,6 @@ namespace AccountService.Migrations
                         .HasDatabaseName("idx_users_username");
 
                     b.ToTable("users", "users");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1L,
-                            AccessFailedCount = 0,
-                            ConcurrencyStamp = "71b786ed-90f6-4a30-90ab-e393b85731a9",
-                            CreatedAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Email = "admin@codehakam.com",
-                            EmailConfirmed = true,
-                            FullName = "System Administrator",
-                            IsBanned = false,
-                            IsVerified = true,
-                            LastLoginAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            LockoutEnabled = false,
-                            NormalizedEmail = "ADMIN@CODEHAKAM.COM",
-                            NormalizedUserName = "ADMIN",
-                            PasswordHash = "AQAAAAIAAYagAAAAEMp3uwRc6q3zylMiS1MVfhgoQa+QoVIDKOJxPKEWrPm2Z+vlNyxbNqUqbKVhcA/ZdA==",
-                            PhoneNumberConfirmed = false,
-                            Rating = 0,
-                            SecurityStamp = "9a5efae2-171b-467c-b955-2ddb0727e8e5",
-                            TwoFactorEnabled = false,
-                            UserName = "admin"
-                        });
                 });
 
             modelBuilder.Entity("AccountService.Models.UserRole", b =>
@@ -1268,15 +1247,6 @@ namespace AccountService.Migrations
                         .HasDatabaseName("idx_user_roles_user_role");
 
                     b.ToTable("user_roles", "users");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1L,
-                            AssignedAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            RoleId = 5L,
-                            UserId = 1L
-                        });
                 });
 
             modelBuilder.Entity("AccountService.Models.UserSettings", b =>
@@ -1328,20 +1298,6 @@ namespace AccountService.Migrations
                     b.HasKey("UserId");
 
                     b.ToTable("user_settings", "users");
-
-                    b.HasData(
-                        new
-                        {
-                            UserId = 1L,
-                            ContestReminders = true,
-                            EmailNotifications = true,
-                            LanguagePreference = "en",
-                            ShowRating = true,
-                            SolutionVisibility = "public",
-                            Theme = "dark",
-                            Timezone = "UTC",
-                            UpdatedAt = new DateTime(2025, 11, 11, 7, 8, 27, 221, DateTimeKind.Utc).AddTicks(8950)
-                        });
                 });
 
             modelBuilder.Entity("AccountService.Models.UserStatistics", b =>
@@ -1412,25 +1368,6 @@ namespace AccountService.Migrations
                         .HasDatabaseName("idx_user_statistics_global_rank");
 
                     b.ToTable("user_statistics", "users");
-
-                    b.HasData(
-                        new
-                        {
-                            UserId = 1L,
-                            AcceptanceRate = 0m,
-                            AcceptedSubmissions = 0,
-                            ContestsParticipated = 0,
-                            CountryRank = 0,
-                            CurrentStreak = 0,
-                            EasySolved = 0,
-                            GlobalRank = 0,
-                            HardSolved = 0,
-                            MaxStreak = 0,
-                            MediumSolved = 0,
-                            ProblemsSolved = 0,
-                            TotalSubmissions = 0,
-                            UpdatedAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
-                        });
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole<long>", b =>

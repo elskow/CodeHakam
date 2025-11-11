@@ -147,16 +147,59 @@ public record PaginatedResponse<T>
 // User Search/Filter
 public record UserSearchRequest
 {
+    [StringLength(100, ErrorMessage = "Search term cannot exceed 100 characters")]
     public string? SearchTerm { get; init; }
+
+    [StringLength(2, MinimumLength = 2)]
     public string? Country { get; init; }
+
+    [Range(0, 5000)]
     public int? MinRating { get; init; }
+
+    [Range(0, 5000)]
     public int? MaxRating { get; init; }
+
     public bool? IsVerified { get; init; }
+
     public bool? IsBanned { get; init; }
+
+    [StringLength(50)]
     public string? SortBy { get; init; } = "rating";
+
+    [StringLength(4)]
     public string? SortOrder { get; init; } = "desc";
+
+    [Range(1, int.MaxValue)]
     public int Page { get; init; } = 1;
+
+    [Range(1, 100)]
     public int PageSize { get; init; } = 20;
+
+    // Helper method to normalize empty strings to null and sanitize input
+    public UserSearchRequest Normalize()
+    {
+        return this with
+        {
+            SearchTerm = SanitizeSearchTerm(SearchTerm),
+            Country = string.IsNullOrWhiteSpace(Country) ? null : Country.Trim().ToUpperInvariant(),
+            SortBy = string.IsNullOrWhiteSpace(SortBy) ? "rating" : SortBy.Trim().ToLowerInvariant(),
+            SortOrder = string.IsNullOrWhiteSpace(SortOrder) ? "desc" : SortOrder.Trim().ToLowerInvariant()
+        };
+    }
+
+    private static string? SanitizeSearchTerm(string? searchTerm)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+            return null;
+
+        // Trim and remove control characters (including null bytes)
+        var sanitized = new string(searchTerm
+            .Trim()
+            .Where(c => !char.IsControl(c))
+            .ToArray());
+
+        return string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
+    }
 }
 
 // Ban User

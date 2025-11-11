@@ -3,7 +3,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AccountService.Configuration;
 using AccountService.Data;
+using AccountService.DTOs;
 using AccountService.Infrastructure;
+using AccountService.Middleware;
 using AccountService.Models;
 using AccountService.Services;
 using AccountService.Services.Impl;
@@ -125,15 +127,9 @@ public class Program
                         context.HandleResponse();
                         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                         context.Response.ContentType = "application/json";
-                        var result = JsonSerializer.Serialize(new
-                        {
-                            error = new
-                            {
-                                code = "UNAUTHORIZED",
-                                message = "You are not authorized to access this resource",
-                                timestamp = DateTime.UtcNow
-                            }
-                        });
+                        var result = JsonSerializer.Serialize(
+                            ApiResponse<object>.ErrorResponse("You are not authorized to access this resource")
+                        );
                         return context.Response.WriteAsync(result);
                     }
                 };
@@ -196,11 +192,19 @@ public class Program
         builder.Services.AddScoped<ITokenService, TokenService>();
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddScoped<IEmailService, EmailService>();
+        builder.Services.AddScoped<IUserService, UserService>();
+        builder.Services.AddScoped<IAdminService, AdminService>();
         builder.Services.AddSingleton<IEventPublisher, EventPublisher>();
         builder.Services.AddSingleton<RedisHealthCheck>();
         builder.Services.AddHostedService<PolicySyncService>();
 
         builder.Services.AddControllers()
+            .ConfigureApiBehaviorOptions(options =>
+            {
+                // Suppress automatic 400 response for model validation errors
+                // Let controllers handle validation errors with consistent ApiResponse format
+                options.SuppressModelStateInvalidFilter = true;
+            })
             .AddJsonOptions(options =>
             {
                 options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
@@ -299,6 +303,8 @@ public class Program
         }
 
         app.UseSerilogRequestLogging();
+
+        app.UseMiddleware<ExceptionHandlingMiddleware>();
 
         app.UseCors("AllowFrontend");
 
