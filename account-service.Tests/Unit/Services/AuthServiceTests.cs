@@ -55,6 +55,8 @@ public class AuthServiceTests : IDisposable
     public async Task LogoutAsync_WithValidToken_ShouldRevokeTokenAndReturnSuccess()
     {
         var user = TestDataBuilder.CreateTestUser();
+        user.UserRoles = new List<UserRole>(); // Initialize navigation property
+
         var rawToken = "raw_refresh_token";
         var tokenHash = "valid_token_hash_12345";
         var refreshToken = TestDataBuilder.CreateRefreshToken(
@@ -63,6 +65,9 @@ public class AuthServiceTests : IDisposable
             expiresAt: DateTime.UtcNow.AddDays(7));
 
         await _context.Users.AddAsync(user);
+        await _context.SaveChangesAsync(); // Save user first to get ID
+
+        refreshToken.UserId = user.Id; // Ensure FK is set
         await _context.RefreshTokens.AddAsync(refreshToken);
         await _context.SaveChangesAsync();
 
@@ -105,15 +110,20 @@ public class AuthServiceTests : IDisposable
     public async Task LogoutAsync_WithAlreadyRevokedToken_ShouldReturnUnauthorized()
     {
         var user = TestDataBuilder.CreateTestUser();
+        user.UserRoles = new List<UserRole>(); // Initialize navigation property
+
         var rawToken = "revoked_token";
         var tokenHash = "revoked_token_hash";
+
+        await _context.Users.AddAsync(user);
+        await _context.SaveChangesAsync(); // Save user first to get ID
+
         var refreshToken = TestDataBuilder.CreateRefreshToken(
             userId: user.Id,
             tokenHash: tokenHash,
             expiresAt: DateTime.UtcNow.AddDays(7),
             revokedAt: DateTime.UtcNow.AddHours(-1));
 
-        await _context.Users.AddAsync(user);
         await _context.RefreshTokens.AddAsync(refreshToken);
         await _context.SaveChangesAsync();
 
@@ -184,14 +194,20 @@ public class AuthServiceTests : IDisposable
     public async Task RefreshTokenAsync_WithValidToken_ShouldReturnNewTokens()
     {
         var user = TestDataBuilder.CreateTestUser();
+        user.UserRoles = new List<UserRole>(); // Initialize navigation property
+
         var oldRawToken = "old_refresh_token";
         var oldTokenHash = "old_token_hash";
+
+        await _context.Users.AddAsync(user);
+        await _context.SaveChangesAsync(); // Save user first to get ID
+
         var oldRefreshToken = TestDataBuilder.CreateRefreshToken(
             userId: user.Id,
             tokenHash: oldTokenHash,
             expiresAt: DateTime.UtcNow.AddDays(7));
+        oldRefreshToken.User = user; // Set navigation property
 
-        await _context.Users.AddAsync(user);
         await _context.RefreshTokens.AddAsync(oldRefreshToken);
         await _context.SaveChangesAsync();
 
