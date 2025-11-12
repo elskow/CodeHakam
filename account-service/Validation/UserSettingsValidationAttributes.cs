@@ -12,12 +12,17 @@ public class ValidThemeAttribute : ValidationAttribute
     {
         if (value == null)
         {
-            return ValidationResult.Success; // Allow null for optional fields
+            return ValidationResult.Success;
         }
 
         if (value is not string strValue)
         {
             return new ValidationResult("Theme must be a string");
+        }
+
+        if (string.IsNullOrWhiteSpace(strValue))
+        {
+            return new ValidationResult("Theme cannot be empty");
         }
 
         if (Enum.TryParse<Theme>(strValue, ignoreCase: true, out _))
@@ -26,7 +31,7 @@ public class ValidThemeAttribute : ValidationAttribute
         }
 
         var validValues = string.Join(", ", Enum.GetNames(typeof(Theme)).Select(v => v.ToLower()));
-        return new ValidationResult($"Invalid theme. Valid values are: {validValues}");
+        return new ValidationResult($"Theme must be one of: {validValues}");
     }
 }
 
@@ -39,7 +44,7 @@ public class ValidSolutionVisibilityAttribute : ValidationAttribute
     {
         if (value == null)
         {
-            return ValidationResult.Success; // Allow null for optional fields
+            return ValidationResult.Success;
         }
 
         if (value is not string strValue)
@@ -58,7 +63,7 @@ public class ValidSolutionVisibilityAttribute : ValidationAttribute
         }
 
         var validValues = string.Join(", ", Enum.GetNames(typeof(SolutionVisibility)).Select(v => v.ToLower()));
-        return new ValidationResult($"Invalid solution visibility. Valid values are: {validValues}");
+        return new ValidationResult($"Solution visibility must be one of: {validValues}");
     }
 }
 
@@ -71,12 +76,17 @@ public class ValidLanguagePreferenceAttribute : ValidationAttribute
     {
         if (value == null)
         {
-            return ValidationResult.Success; // Allow null for optional fields
+            return ValidationResult.Success;
         }
 
         if (value is not string strValue)
         {
             return new ValidationResult("Language preference must be a string");
+        }
+
+        if (string.IsNullOrWhiteSpace(strValue))
+        {
+            return new ValidationResult("Language preference cannot be empty");
         }
 
         if (Enum.TryParse<LanguagePreference>(strValue, ignoreCase: true, out _))
@@ -85,7 +95,7 @@ public class ValidLanguagePreferenceAttribute : ValidationAttribute
         }
 
         var validValues = string.Join(", ", Enum.GetNames(typeof(LanguagePreference)).Select(v => v.ToLower()));
-        return new ValidationResult($"Invalid language preference. Valid values are: {validValues}");
+        return new ValidationResult($"Language must be one of: {validValues}");
     }
 }
 
@@ -110,17 +120,21 @@ public class ValidTimezoneAttribute : ValidationAttribute
             return new ValidationResult("Timezone must be a string");
         }
 
+        if (string.IsNullOrWhiteSpace(strValue))
+        {
+            return new ValidationResult("Timezone cannot be empty");
+        }
+
         if (ValidTimezones.Contains(strValue))
         {
             return ValidationResult.Success;
         }
 
-        // Also allow "UTC" as a special case
         if (strValue.Equals("UTC", StringComparison.OrdinalIgnoreCase))
         {
             return ValidationResult.Success;
         }
 
-        return new ValidationResult($"Invalid timezone. Please provide a valid IANA timezone identifier (e.g., 'UTC', 'America/New_York', 'Asia/Jakarta')");
+        return new ValidationResult($"Invalid timezone identifier");
     }
 }
