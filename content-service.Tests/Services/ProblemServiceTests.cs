@@ -1,10 +1,3 @@
-namespace ContentService.Tests.Services;
-
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using ContentService.Enums;
 using ContentService.Models;
 using ContentService.Repositories.Interfaces;
@@ -12,25 +5,25 @@ using ContentService.Services.Implementations;
 using ContentService.Services.Interfaces;
 using Microsoft.Extensions.Logging;
 using Moq;
-using Xunit;
+
+namespace ContentService.Tests.Services;
 
 public class ProblemServiceTests
 {
-    private readonly Mock<IProblemRepository> _problemRepositoryMock;
     private readonly Mock<IEventPublisher> _eventPublisherMock;
-    private readonly Mock<ILogger<ProblemService>> _loggerMock;
+    private readonly Mock<IProblemRepository> _problemRepositoryMock;
     private readonly ProblemService _service;
 
     public ProblemServiceTests()
     {
         _problemRepositoryMock = new Mock<IProblemRepository>();
         _eventPublisherMock = new Mock<IEventPublisher>();
-        _loggerMock = new Mock<ILogger<ProblemService>>();
+        var loggerMock = new Mock<ILogger<ProblemService>>();
 
         _service = new ProblemService(
             _problemRepositoryMock.Object,
             _eventPublisherMock.Object,
-            _loggerMock.Object);
+            loggerMock.Object);
     }
 
     [Fact]
@@ -111,12 +104,26 @@ public class ProblemServiceTests
         var pageSize = 10;
         var problems = new List<Problem>
         {
-            new Problem { Id = 1, Title = "Problem 1", Slug = "problem-1", Description = "Desc 1", InputFormat = "Input 1", OutputFormat = "Output 1", Constraints = "Constraints 1", Difficulty = Difficulty.Easy, AuthorId = 100L },
-            new Problem { Id = 2, Title = "Problem 2", Slug = "problem-2", Description = "Desc 2", InputFormat = "Input 2", OutputFormat = "Output 2", Constraints = "Constraints 2", Difficulty = Difficulty.Medium, AuthorId = 100L }
+            new()
+            {
+                Id = 1, Title = "Problem 1", Slug = "problem-1", Description = "Desc 1", InputFormat = "Input 1", OutputFormat = "Output 1",
+                Constraints = "Constraints 1", Difficulty = Difficulty.Easy, AuthorId = 100L
+            },
+            new()
+            {
+                Id = 2, Title = "Problem 2", Slug = "problem-2", Description = "Desc 2", InputFormat = "Input 2", OutputFormat = "Output 2",
+                Constraints = "Constraints 2", Difficulty = Difficulty.Medium, AuthorId = 100L
+            }
         };
 
         _problemRepositoryMock
-            .Setup(r => r.GetAllAsync(page, pageSize))
+            .Setup(r => r.SearchAsync(
+                It.IsAny<string>(),
+                It.IsAny<Difficulty?>(),
+                It.IsAny<string>(),
+                It.IsAny<ProblemVisibility?>(),
+                It.IsAny<int>(),
+                It.IsAny<int>()))
             .ReturnsAsync(problems);
 
         _problemRepositoryMock
@@ -125,37 +132,36 @@ public class ProblemServiceTests
 
         var result = await _service.GetProblemsAsync(page, pageSize);
 
-        Assert.Equal(2, result.TotalCount);
-        Assert.Equal(2, result.Problems.Count());
+        Assert.Equal(expected: 2, result.Count());
     }
 
     [Fact]
     public async Task SearchProblemsAsync_WithFilters_ShouldReturnFilteredProblems()
     {
         var searchTerm = "sum";
-        var difficulty = "Easy";
+        var difficulty = Difficulty.Easy;
         var tags = new List<string> { "array", "hash-table" };
         var page = 1;
         var pageSize = 10;
 
         var expectedProblems = new List<Problem>
         {
-            new Problem { Id = 1, Title = "Two Sum", Slug = "two-sum", Description = "Desc", InputFormat = "Input", OutputFormat = "Output", Constraints = "Constraints", Difficulty = Difficulty.Easy, AuthorId = 100L }
+            new()
+            {
+                Id = 1, Title = "Two Sum", Slug = "two-sum", Description = "Desc", InputFormat = "Input", OutputFormat = "Output",
+                Constraints = "Constraints", Difficulty = Difficulty.Easy, AuthorId = 100L
+            }
         };
 
         _problemRepositoryMock
-            .Setup(r => r.SearchAsync(searchTerm, Difficulty.Easy, "array", null, page, pageSize))
+            .Setup(r => r.SearchAsync(searchTerm, difficulty, "array", null, page, pageSize))
             .ReturnsAsync(expectedProblems);
-
-        _problemRepositoryMock
-            .Setup(r => r.GetSearchCountAsync(searchTerm, Difficulty.Easy, "array", null))
-            .ReturnsAsync(1);
 
         var result = await _service.SearchProblemsAsync(searchTerm, difficulty, tags, page, pageSize);
 
-        Assert.Single(result.Problems);
-        Assert.Equal(1, result.TotalCount);
-        Assert.Equal("Two Sum", result.Problems.First().Title);
+        IEnumerable<Problem> collections = result as Problem[] ?? result.ToArray();
+        Assert.Single(collections);
+        Assert.Equal("Two Sum", collections.First().Title);
     }
 
     [Fact]
@@ -163,7 +169,7 @@ public class ProblemServiceTests
     {
         var title = "Two Sum";
         var description = "Find two numbers";
-        var difficulty = "Easy";
+        var difficulty = Difficulty.Easy;
         var timeLimit = 1000;
         var memoryLimit = 256;
         var tags = new List<string> { "Array", "Hash-Table" };
@@ -193,19 +199,22 @@ public class ProblemServiceTests
         var result = await _service.CreateProblemAsync(
             title,
             description,
+            "Input format",
+            "Output format",
+            "Constraints",
             difficulty,
             timeLimit,
             memoryLimit,
-            tags,
-            authorId);
+            authorId,
+            tags);
 
         Assert.NotNull(result);
         Assert.Equal(title, result.Title);
         Assert.Equal("two-sum", result.Slug);
         Assert.Equal(Difficulty.Easy, result.Difficulty);
         Assert.Equal(authorId, result.AuthorId);
-        Assert.Equal(ProblemVisibility.Private, result.Visibility);
-        Assert.Equal(2, result.Tags.Count);
+        Assert.Equal(ProblemVisibility.Public, result.Visibility);
+        Assert.Equal(expected: 2, result.Tags.Count);
         Assert.Contains(result.Tags, t => t.Tag == "array");
         Assert.Contains(result.Tags, t => t.Tag == "hash-table");
 
@@ -225,7 +234,7 @@ public class ProblemServiceTests
     {
         var title = "Two Sum";
         var description = "Find two numbers";
-        var difficulty = "Easy";
+        var difficulty = Difficulty.Easy;
         var timeLimit = 1000;
         var memoryLimit = 256;
         var tags = new List<string> { "array" };
@@ -247,11 +256,14 @@ public class ProblemServiceTests
         var result = await _service.CreateProblemAsync(
             title,
             description,
+            "Input format",
+            "Output format",
+            "Constraints",
             difficulty,
             timeLimit,
             memoryLimit,
-            tags,
-            authorId);
+            authorId,
+            tags);
 
         Assert.Equal("two-sum-1", result.Slug);
     }
@@ -261,7 +273,7 @@ public class ProblemServiceTests
     {
         var title = "Add Two Numbers #2 (Hard!)";
         var description = "Description";
-        var difficulty = "Hard";
+        var difficulty = Difficulty.Hard;
         var timeLimit = 2000;
         var memoryLimit = 512;
         var tags = new List<string> { "linked-list" };
@@ -282,11 +294,14 @@ public class ProblemServiceTests
         var result = await _service.CreateProblemAsync(
             title,
             description,
+            "Input format",
+            "Output format",
+            "Constraints",
             difficulty,
             timeLimit,
             memoryLimit,
-            tags,
-            authorId);
+            authorId,
+            tags);
 
         Assert.Equal("add-two-numbers-2-hard", result.Slug);
     }
@@ -313,7 +328,7 @@ public class ProblemServiceTests
         existingProblem.Tags.Add(new ProblemTag { Tag = "old-tag" });
 
         _problemRepositoryMock
-            .Setup(r => r.GetByIdAsync(problemId, false))
+            .Setup(r => r.GetByIdAsync(problemId, true))
             .ReturnsAsync(existingProblem);
 
         _problemRepositoryMock
@@ -330,19 +345,19 @@ public class ProblemServiceTests
 
         var result = await _service.UpdateProblemAsync(
             problemId,
+            userId,
             "New Title",
             "New description",
-            "Medium",
-            2000,
-            512,
-            new List<string> { "new-tag" },
-            userId);
+            difficulty: Difficulty.Medium,
+            timeLimit: 2000,
+            memoryLimit: 512,
+            tags: ["new-tag"]);
 
         Assert.Equal("New Title", result.Title);
         Assert.Equal("New description", result.Description);
         Assert.Equal(Difficulty.Medium, result.Difficulty);
-        Assert.Equal(2000, result.TimeLimit);
-        Assert.Equal(512, result.MemoryLimit);
+        Assert.Equal(expected: 2000, result.TimeLimit);
+        Assert.Equal(expected: 512, result.MemoryLimit);
         Assert.Contains(result.Tags, t => t.Tag == "new-tag");
 
         _problemRepositoryMock.Verify(r => r.UpdateAsync(It.IsAny<Problem>()), Times.Once);
@@ -358,19 +373,19 @@ public class ProblemServiceTests
         var userId = 100L;
 
         _problemRepositoryMock
-            .Setup(r => r.GetByIdAsync(problemId, false))
+            .Setup(r => r.GetByIdAsync(problemId, true))
             .ReturnsAsync((Problem?)null);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        await Assert.ThrowsAsync<KeyNotFoundException>(async () =>
             await _service.UpdateProblemAsync(
                 problemId,
+                userId,
                 "Title",
                 "Description",
-                "Easy",
-                1000,
-                256,
-                new List<string> { "tag" },
-                userId));
+                difficulty: Difficulty.Easy,
+                timeLimit: 1000,
+                memoryLimit: 256,
+                tags: ["tag"]));
     }
 
     [Fact]
@@ -393,19 +408,19 @@ public class ProblemServiceTests
         };
 
         _problemRepositoryMock
-            .Setup(r => r.GetByIdAsync(problemId, false))
+            .Setup(r => r.GetByIdAsync(problemId, true))
             .ReturnsAsync(existingProblem);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(async () =>
             await _service.UpdateProblemAsync(
                 problemId,
+                differentUserId,
                 "New Title",
                 "New Description",
-                "Easy",
-                1000,
-                256,
-                new List<string> { "tag" },
-                differentUserId));
+                difficulty: Difficulty.Easy,
+                timeLimit: 1000,
+                memoryLimit: 256,
+                tags: ["tag"]));
     }
 
     [Fact]
@@ -460,7 +475,7 @@ public class ProblemServiceTests
             .Setup(r => r.GetByIdAsync(problemId, false))
             .ReturnsAsync((Problem?)null);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        await Assert.ThrowsAsync<KeyNotFoundException>(async () =>
             await _service.DeleteProblemAsync(problemId, userId));
     }
 
@@ -529,8 +544,16 @@ public class ProblemServiceTests
         var authorId = 100L;
         var expectedProblems = new List<Problem>
         {
-            new Problem { Id = 1, Title = "Problem 1", Slug = "problem-1", Description = "Desc 1", InputFormat = "Input 1", OutputFormat = "Output 1", Constraints = "Constraints 1", Difficulty = Difficulty.Easy, AuthorId = authorId },
-            new Problem { Id = 2, Title = "Problem 2", Slug = "problem-2", Description = "Desc 2", InputFormat = "Input 2", OutputFormat = "Output 2", Constraints = "Constraints 2", Difficulty = Difficulty.Medium, AuthorId = authorId }
+            new()
+            {
+                Id = 1, Title = "Problem 1", Slug = "problem-1", Description = "Desc 1", InputFormat = "Input 1", OutputFormat = "Output 1",
+                Constraints = "Constraints 1", Difficulty = Difficulty.Easy, AuthorId = authorId
+            },
+            new()
+            {
+                Id = 2, Title = "Problem 2", Slug = "problem-2", Description = "Desc 2", InputFormat = "Input 2", OutputFormat = "Output 2",
+                Constraints = "Constraints 2", Difficulty = Difficulty.Medium, AuthorId = authorId
+            }
         };
 
         _problemRepositoryMock
@@ -539,8 +562,9 @@ public class ProblemServiceTests
 
         var result = await _service.GetProblemsByAuthorAsync(authorId);
 
-        Assert.Equal(2, result.Count());
-        Assert.All(result, p => Assert.Equal(authorId, p.AuthorId));
+        IEnumerable<Problem> enumerates = result as Problem[] ?? result.ToArray();
+        Assert.Equal(expected: 2, enumerates.Count());
+        Assert.All(enumerates, p => Assert.Equal(authorId, p.AuthorId));
     }
 
     [Fact]

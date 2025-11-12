@@ -1,20 +1,15 @@
-namespace ContentService.Models;
+namespace ContentService.DTOs.Responses;
 
-public sealed class Editorial
+public class EditorialResponse
 {
     public long Id { get; set; }
     public long ProblemId { get; set; }
+    public long AuthorId { get; set; }
     public required string Content { get; set; }
-    public required string Approach { get; set; }
     public required string TimeComplexity { get; set; }
     public required string SpaceComplexity { get; set; }
-    public string? SolutionCode { get; set; }
     public string? VideoUrl { get; set; }
-    public long AuthorId { get; set; }
-    public DateTime? PublishedAt { get; set; }
     public bool IsPublished { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
-
-    public Problem Problem { get; set; } = null!;
 }

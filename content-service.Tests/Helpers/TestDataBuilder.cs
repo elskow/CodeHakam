@@ -191,7 +191,7 @@ public static class TestDataBuilder
             Title = title,
             Description = description,
             OwnerId = ownerId,
-            ProblemIds = problemIds ?? Array.Empty<long>(),
+            ProblemIds = problemIds ?? [],
             IsPublic = isPublic,
             ViewCount = 0,
             CreatedAt = DateTime.UtcNow,

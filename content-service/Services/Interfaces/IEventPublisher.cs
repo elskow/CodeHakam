@@ -10,7 +10,9 @@ public interface IEventPublisher
 
     Task PublishProblemDeletedAsync(long problemId, string title, long deletedBy, CancellationToken cancellationToken = default);
 
-    Task PublishTestCaseUploadedAsync(long problemId, long testCaseId, bool isSample, CancellationToken cancellationToken = default);
+    Task PublishTestCaseUploadedAsync(long testCaseId, long problemId, int testNumber, bool isSample, CancellationToken cancellationToken = default);
+
+    Task PublishTestCaseDeletedAsync(long testCaseId, long problemId, int testNumber, CancellationToken cancellationToken = default);
 
     Task PublishEditorialPublishedAsync(long problemId, long editorialId, long authorId, CancellationToken cancellationToken = default);
 

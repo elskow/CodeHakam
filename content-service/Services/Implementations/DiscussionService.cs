@@ -1,60 +1,53 @@
-namespace ContentService.Services.Implementations;
-
 using ContentService.Models;
 using ContentService.Repositories.Interfaces;
 using ContentService.Services.Interfaces;
-using Microsoft.Extensions.Logging;
 
-public class DiscussionService : IDiscussionService
+namespace ContentService.Services.Implementations;
+
+public class DiscussionService(
+    IDiscussionRepository discussionRepository,
+    IProblemRepository problemRepository,
+    IEventPublisher eventPublisher,
+    ILogger<DiscussionService> logger)
+    : IDiscussionService
 {
-    private readonly IDiscussionRepository _discussionRepository;
-    private readonly IProblemRepository _problemRepository;
-    private readonly IEventPublisher _eventPublisher;
-    private readonly ILogger<DiscussionService> _logger;
-
-    public DiscussionService(
-        IDiscussionRepository discussionRepository,
-        IProblemRepository problemRepository,
-        IEventPublisher eventPublisher,
-        ILogger<DiscussionService> logger)
-    {
-        _discussionRepository = discussionRepository;
-        _problemRepository = problemRepository;
-        _eventPublisher = eventPublisher;
-        _logger = logger;
-    }
-
     public async Task<Discussion?> GetDiscussionAsync(long id, bool includeComments = false, CancellationToken cancellationToken = default)
     {
-        return await _discussionRepository.GetByIdAsync(id, includeComments);
+        return await discussionRepository.GetByIdAsync(id, includeComments);
     }
 
-    public async Task<(IEnumerable<Discussion> Discussions, int TotalCount)> GetDiscussionsAsync(
-        long? problemId,
+    public async Task<IEnumerable<Discussion>> GetDiscussionsAsync(int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        return await discussionRepository.GetAllAsync(page, pageSize);
+    }
+
+    public async Task<IEnumerable<Discussion>> GetDiscussionsByProblemAsync(
+        long problemId,
         int page,
         int pageSize,
         CancellationToken cancellationToken = default)
     {
-        if (problemId.HasValue)
-        {
-            var discussions = await _discussionRepository.GetByProblemIdAsync(problemId.Value, page, pageSize);
-            var count = await _discussionRepository.GetCountByProblemAsync(problemId.Value);
-            return (discussions, count);
-        }
+        return await discussionRepository.GetByProblemIdAsync(problemId, page, pageSize);
+    }
 
-        var allDiscussions = await _discussionRepository.GetAllAsync(page, pageSize);
-        var totalCount = await _discussionRepository.GetTotalCountAsync();
-        return (allDiscussions, totalCount);
+    public async Task<int> GetTotalDiscussionsCountAsync(CancellationToken cancellationToken = default)
+    {
+        return await discussionRepository.GetTotalCountAsync();
+    }
+
+    public async Task<int> GetProblemDiscussionsCountAsync(long problemId, CancellationToken cancellationToken = default)
+    {
+        return await discussionRepository.GetCountByProblemAsync(problemId);
     }
 
     public async Task<Discussion> CreateDiscussionAsync(
         long problemId,
+        long userId,
         string title,
         string content,
-        long authorId,
         CancellationToken cancellationToken = default)
     {
-        var problem = await _problemRepository.GetByIdAsync(problemId);
+        var problem = await problemRepository.GetByIdAsync(problemId);
         if (problem == null)
         {
             throw new InvalidOperationException($"Problem with ID {problemId} not found");
@@ -65,7 +58,7 @@ public class DiscussionService : IDiscussionService
             ProblemId = problemId,
             Title = title,
             Content = content,
-            UserId = authorId,
+            UserId = userId,
             VoteCount = 0,
             CommentCount = 0,
             IsLocked = false,
@@ -74,32 +67,32 @@ public class DiscussionService : IDiscussionService
             UpdatedAt = DateTime.UtcNow
         };
 
-        await _discussionRepository.CreateAsync(discussion);
+        await discussionRepository.CreateAsync(discussion);
 
-        _logger.LogInformation("Discussion created: {DiscussionId} for problem {ProblemId} by user {AuthorId}",
-            discussion.Id, problemId, authorId);
+        logger.LogInformation("Discussion created: {DiscussionId} for problem {ProblemId} by user {UserId}",
+            discussion.Id, problemId, userId);
 
-        await _eventPublisher.PublishDiscussionCreatedAsync(
+        await eventPublisher.PublishDiscussionCreatedAsync(
             discussion.Id,
             problemId,
             title,
-            authorId,
+            userId,
             cancellationToken);
 
         return discussion;
     }
 
     public async Task<Discussion> UpdateDiscussionAsync(
-        long id,
+        long discussionId,
+        long userId,
         string title,
         string content,
-        long userId,
         CancellationToken cancellationToken = default)
     {
-        var discussion = await _discussionRepository.GetByIdAsync(id, includeComments: false);
+        var discussion = await discussionRepository.GetByIdAsync(discussionId, includeComments: false);
         if (discussion == null)
         {
-            throw new InvalidOperationException($"Discussion with ID {id} not found");
+            throw new InvalidOperationException($"Discussion with ID {discussionId} not found");
         }
 
         if (discussion.UserId != userId)
@@ -111,16 +104,16 @@ public class DiscussionService : IDiscussionService
         discussion.Content = content;
         discussion.UpdatedAt = DateTime.UtcNow;
 
-        await _discussionRepository.UpdateAsync(discussion);
+        await discussionRepository.UpdateAsync(discussion);
 
-        _logger.LogInformation("Discussion updated: {DiscussionId} by user {UserId}", id, userId);
+        logger.LogInformation("Discussion updated: {DiscussionId} by user {UserId}", discussionId, userId);
 
         return discussion;
     }
 
     public async Task DeleteDiscussionAsync(long id, long userId, CancellationToken cancellationToken = default)
     {
-        var discussion = await _discussionRepository.GetByIdAsync(id, includeComments: false);
+        var discussion = await discussionRepository.GetByIdAsync(id, includeComments: false);
         if (discussion == null)
         {
             throw new InvalidOperationException($"Discussion with ID {id} not found");
@@ -131,30 +124,30 @@ public class DiscussionService : IDiscussionService
             throw new UnauthorizedAccessException("Only the discussion author can delete it");
         }
 
-        await _discussionRepository.DeleteAsync(id);
+        await discussionRepository.DeleteAsync(id);
 
-        _logger.LogInformation("Discussion deleted: {DiscussionId} by user {UserId}", id, userId);
+        logger.LogInformation("Discussion deleted: {DiscussionId} by user {UserId}", id, userId);
     }
 
     public async Task<DiscussionComment> AddCommentAsync(
         long discussionId,
+        long userId,
         string content,
-        long authorId,
-        long? parentCommentId = null,
+        long? parentId = null,
         CancellationToken cancellationToken = default)
     {
-        var discussion = await _discussionRepository.GetByIdAsync(discussionId, includeComments: false);
+        var discussion = await discussionRepository.GetByIdAsync(discussionId, includeComments: false);
         if (discussion == null)
         {
             throw new InvalidOperationException($"Discussion with ID {discussionId} not found");
         }
 
-        if (parentCommentId.HasValue)
+        if (parentId.HasValue)
         {
-            var parentComment = await _discussionRepository.GetCommentByIdAsync(parentCommentId.Value);
+            var parentComment = await discussionRepository.GetCommentByIdAsync(parentId.Value);
             if (parentComment == null)
             {
-                throw new InvalidOperationException($"Parent comment with ID {parentCommentId} not found");
+                throw new InvalidOperationException($"Parent comment with ID {parentId.Value} not found");
             }
 
             if (parentComment.DiscussionId != discussionId)
@@ -167,21 +160,26 @@ public class DiscussionService : IDiscussionService
         {
             DiscussionId = discussionId,
             Content = content,
-            UserId = authorId,
-            ParentId = parentCommentId,
+            UserId = userId,
+            ParentId = parentId,
             VoteCount = 0,
             IsAccepted = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
 
-        await _discussionRepository.CreateCommentAsync(comment);
-        await _discussionRepository.IncrementCommentCountAsync(discussionId);
+        await discussionRepository.CreateCommentAsync(comment);
+        await discussionRepository.IncrementCommentCountAsync(discussionId);
 
-        _logger.LogInformation("Comment added to discussion {DiscussionId} by user {AuthorId}",
-            discussionId, authorId);
+        logger.LogInformation("Comment added to discussion {DiscussionId} by user {UserId}",
+            discussionId, userId);
 
         return comment;
+    }
+
+    public async Task<DiscussionComment?> GetCommentAsync(long commentId, CancellationToken cancellationToken = default)
+    {
+        return await discussionRepository.GetCommentByIdAsync(commentId);
     }
 
     public async Task<DiscussionComment> UpdateCommentAsync(
@@ -190,7 +188,7 @@ public class DiscussionService : IDiscussionService
         long userId,
         CancellationToken cancellationToken = default)
     {
-        var comment = await _discussionRepository.GetCommentByIdAsync(commentId);
+        var comment = await discussionRepository.GetCommentByIdAsync(commentId);
         if (comment == null)
         {
             throw new InvalidOperationException($"Comment with ID {commentId} not found");
@@ -204,16 +202,16 @@ public class DiscussionService : IDiscussionService
         comment.Content = content;
         comment.UpdatedAt = DateTime.UtcNow;
 
-        await _discussionRepository.UpdateCommentAsync(comment);
+        await discussionRepository.UpdateCommentAsync(comment);
 
-        _logger.LogInformation("Comment updated: {CommentId} by user {UserId}", commentId, userId);
+        logger.LogInformation("Comment updated: {CommentId} by user {UserId}", commentId, userId);
 
         return comment;
     }
 
     public async Task DeleteCommentAsync(long commentId, long userId, CancellationToken cancellationToken = default)
     {
-        var comment = await _discussionRepository.GetCommentByIdAsync(commentId);
+        var comment = await discussionRepository.GetCommentByIdAsync(commentId);
         if (comment == null)
         {
             throw new InvalidOperationException($"Comment with ID {commentId} not found");
@@ -224,41 +222,59 @@ public class DiscussionService : IDiscussionService
             throw new UnauthorizedAccessException("Only the comment author can delete it");
         }
 
-        await _discussionRepository.DeleteCommentAsync(commentId);
-        await _discussionRepository.DecrementCommentCountAsync(comment.DiscussionId);
+        await discussionRepository.DeleteCommentAsync(commentId);
+        await discussionRepository.DecrementCommentCountAsync(comment.DiscussionId);
 
-        _logger.LogInformation("Comment deleted: {CommentId} by user {UserId}", commentId, userId);
+        logger.LogInformation("Comment deleted: {CommentId} by user {UserId}", commentId, userId);
     }
 
     public async Task VoteDiscussionAsync(long discussionId, bool upvote, long userId, CancellationToken cancellationToken = default)
     {
-        var discussion = await _discussionRepository.GetByIdAsync(discussionId, includeComments: false);
+        var discussion = await discussionRepository.GetByIdAsync(discussionId, includeComments: false);
         if (discussion == null)
         {
             throw new InvalidOperationException($"Discussion with ID {discussionId} not found");
         }
 
         var increment = upvote ? 1 : -1;
-        await _discussionRepository.IncrementVoteCountAsync(discussionId, increment);
+        await discussionRepository.IncrementVoteCountAsync(discussionId, increment);
 
-        _logger.LogInformation("Discussion {DiscussionId} voted by user {UserId}: {VoteType}",
+        logger.LogInformation("Discussion {DiscussionId} voted by user {UserId}: {VoteType}",
             discussionId, userId, upvote ? "upvote" : "downvote");
     }
 
     public async Task<bool> DiscussionExistsAsync(long id, CancellationToken cancellationToken = default)
     {
-        return await _discussionRepository.ExistsAsync(id);
+        return await discussionRepository.ExistsAsync(id);
     }
 
     public async Task<bool> IsDiscussionAuthorAsync(long discussionId, long userId, CancellationToken cancellationToken = default)
     {
-        var discussion = await _discussionRepository.GetByIdAsync(discussionId, includeComments: false);
+        var discussion = await discussionRepository.GetByIdAsync(discussionId, includeComments: false);
         return discussion?.UserId == userId;
     }
 
     public async Task<bool> IsCommentAuthorAsync(long commentId, long userId, CancellationToken cancellationToken = default)
     {
-        var comment = await _discussionRepository.GetCommentByIdAsync(commentId);
+        var comment = await discussionRepository.GetCommentByIdAsync(commentId);
         return comment?.UserId == userId;
+    }
+
+    public async Task<(IEnumerable<Discussion> Discussions, int TotalCount)> GetDiscussionsAsync(
+        long? problemId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (problemId.HasValue)
+        {
+            var discussions = await discussionRepository.GetByProblemIdAsync(problemId.Value, page, pageSize);
+            var count = await discussionRepository.GetCountByProblemAsync(problemId.Value);
+            return (discussions, count);
+        }
+
+        var allDiscussions = await discussionRepository.GetAllAsync(page, pageSize);
+        var totalCount = await discussionRepository.GetTotalCountAsync();
+        return (allDiscussions, totalCount);
     }
 }

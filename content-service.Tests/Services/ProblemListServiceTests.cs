@@ -1,36 +1,27 @@
-namespace ContentService.Tests.Services;
-
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using ContentService.Enums;
 using ContentService.Models;
 using ContentService.Repositories.Interfaces;
 using ContentService.Services.Implementations;
-using ContentService.Services.Interfaces;
 using Microsoft.Extensions.Logging;
 using Moq;
-using Xunit;
+
+namespace ContentService.Tests.Services;
 
 public class ProblemListServiceTests
 {
     private readonly Mock<IProblemListRepository> _problemListRepositoryMock;
     private readonly Mock<IProblemRepository> _problemRepositoryMock;
-    private readonly Mock<ILogger<ProblemListService>> _loggerMock;
     private readonly ProblemListService _service;
 
     public ProblemListServiceTests()
     {
         _problemListRepositoryMock = new Mock<IProblemListRepository>();
         _problemRepositoryMock = new Mock<IProblemRepository>();
-        _loggerMock = new Mock<ILogger<ProblemListService>>();
+        var loggerMock = new Mock<ILogger<ProblemListService>>();
 
         _service = new ProblemListService(
             _problemListRepositoryMock.Object,
             _problemRepositoryMock.Object,
-            _loggerMock.Object);
+            loggerMock.Object);
     }
 
     [Fact]
@@ -43,7 +34,7 @@ public class ProblemListServiceTests
             Title = "Top Interview Questions",
             Description = "Most commonly asked questions",
             OwnerId = 100L,
-            ProblemIds = new long[] { 1, 2, 3 },
+            ProblemIds = [1, 2, 3],
             IsPublic = true
         };
 
@@ -56,7 +47,7 @@ public class ProblemListServiceTests
         Assert.NotNull(result);
         Assert.Equal(listId, result.Id);
         Assert.Equal("Top Interview Questions", result.Title);
-        Assert.Equal(3, result.ProblemIds.Length);
+        Assert.Equal(expected: 3, result.ProblemIds.Length);
     }
 
     [Fact]
@@ -81,8 +72,10 @@ public class ProblemListServiceTests
         var pageSize = 10;
         var expectedLists = new List<ProblemList>
         {
-            new ProblemList { Id = 1, Title = "List 1", Description = "Desc 1", OwnerId = ownerId, ProblemIds = new long[] { 1, 2 }, IsPublic = true },
-            new ProblemList { Id = 2, Title = "List 2", Description = "Desc 2", OwnerId = ownerId, ProblemIds = new long[] { 3, 4 }, IsPublic = false }
+            new()
+                { Id = 1, Title = "List 1", Description = "Desc 1", OwnerId = ownerId, ProblemIds = [1, 2], IsPublic = true },
+            new()
+                { Id = 2, Title = "List 2", Description = "Desc 2", OwnerId = ownerId, ProblemIds = [3, 4], IsPublic = false }
         };
 
         _problemListRepositoryMock
@@ -91,8 +84,9 @@ public class ProblemListServiceTests
 
         var result = await _service.GetProblemListsByOwnerAsync(ownerId, page, pageSize);
 
-        Assert.Equal(2, result.Count());
-        Assert.All(result, list => Assert.Equal(ownerId, list.OwnerId));
+        IEnumerable<ProblemList> problemLists = result as ProblemList[] ?? result.ToArray();
+        Assert.Equal(expected: 2, problemLists.Count());
+        Assert.All(problemLists, list => Assert.Equal(ownerId, list.OwnerId));
     }
 
     [Fact]
@@ -102,8 +96,10 @@ public class ProblemListServiceTests
         var pageSize = 10;
         var expectedLists = new List<ProblemList>
         {
-            new ProblemList { Id = 1, Title = "Public List 1", Description = "Desc 1", OwnerId = 100L, ProblemIds = new long[] { 1, 2 }, IsPublic = true },
-            new ProblemList { Id = 2, Title = "Public List 2", Description = "Desc 2", OwnerId = 101L, ProblemIds = new long[] { 3, 4 }, IsPublic = true }
+            new()
+                { Id = 1, Title = "Public List 1", Description = "Desc 1", OwnerId = 100L, ProblemIds = [1, 2], IsPublic = true },
+            new()
+                { Id = 2, Title = "Public List 2", Description = "Desc 2", OwnerId = 101L, ProblemIds = [3, 4], IsPublic = true }
         };
 
         _problemListRepositoryMock
@@ -112,8 +108,9 @@ public class ProblemListServiceTests
 
         var result = await _service.GetPublicListsAsync(page, pageSize);
 
-        Assert.Equal(2, result.Count());
-        Assert.All(result, list => Assert.True(list.IsPublic));
+        IEnumerable<ProblemList> problemLists = result as ProblemList[] ?? result.ToArray();
+        Assert.Equal(expected: 2, problemLists.Count());
+        Assert.All(problemLists, list => Assert.True(list.IsPublic));
     }
 
     [Fact]
@@ -144,7 +141,7 @@ public class ProblemListServiceTests
         Assert.Equal(description, result.Description);
         Assert.Equal(isPublic, result.IsPublic);
         Assert.Equal(ownerId, result.OwnerId);
-        Assert.Equal(3, result.ProblemIds.Length);
+        Assert.Equal(expected: 3, result.ProblemIds.Length);
 
         _problemListRepositoryMock.Verify(r => r.CreateAsync(It.IsAny<ProblemList>()), Times.Once);
     }
@@ -178,7 +175,7 @@ public class ProblemListServiceTests
             Title = "Old Title",
             Description = "Old Description",
             OwnerId = userId,
-            ProblemIds = new long[] { 1, 2 },
+            ProblemIds = [1, 2],
             IsPublic = false
         };
 
@@ -198,14 +195,14 @@ public class ProblemListServiceTests
             listId,
             "New Title",
             "New Description",
-            true,
-            new List<long> { 3L, 4L, 5L },
+            isPublic: true,
+            [3L, 4L, 5L],
             userId);
 
         Assert.Equal("New Title", result.Title);
         Assert.Equal("New Description", result.Description);
         Assert.True(result.IsPublic);
-        Assert.Equal(3, result.ProblemIds.Length);
+        Assert.Equal(expected: 3, result.ProblemIds.Length);
 
         _problemListRepositoryMock.Verify(r => r.UpdateAsync(It.IsAny<ProblemList>()), Times.Once);
     }
@@ -220,7 +217,7 @@ public class ProblemListServiceTests
             .ReturnsAsync((ProblemList?)null);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _service.UpdateProblemListAsync(listId, "Title", "Desc", true, new List<long> { 1 }, 100L));
+            await _service.UpdateProblemListAsync(listId, "Title", "Desc", isPublic: true, [1], userId: 100L));
     }
 
     [Fact]
@@ -235,7 +232,7 @@ public class ProblemListServiceTests
             Title = "Title",
             Description = "Description",
             OwnerId = ownerId,
-            ProblemIds = new long[] { 1 },
+            ProblemIds = [1],
             IsPublic = false
         };
 
@@ -244,7 +241,7 @@ public class ProblemListServiceTests
             .ReturnsAsync(existingList);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(async () =>
-            await _service.UpdateProblemListAsync(listId, "New Title", "New Desc", true, new List<long> { 1 }, differentUserId));
+            await _service.UpdateProblemListAsync(listId, "New Title", "New Desc", isPublic: true, [1], differentUserId));
     }
 
     [Fact]
@@ -258,7 +255,7 @@ public class ProblemListServiceTests
             Title = "Title",
             Description = "Description",
             OwnerId = userId,
-            ProblemIds = new long[] { 1, 2 },
+            ProblemIds = [1, 2],
             IsPublic = false
         };
 
@@ -287,7 +284,7 @@ public class ProblemListServiceTests
             Title = "Title",
             Description = "Description",
             OwnerId = ownerId,
-            ProblemIds = new long[] { 1 },
+            ProblemIds = [1],
             IsPublic = false
         };
 
@@ -311,7 +308,7 @@ public class ProblemListServiceTests
             Title = "Title",
             Description = "Description",
             OwnerId = userId,
-            ProblemIds = new long[] { 1, 2, 3 },
+            ProblemIds = [1, 2, 3],
             IsPublic = false
         };
 
@@ -344,7 +341,7 @@ public class ProblemListServiceTests
             Title = "Title",
             Description = "Description",
             OwnerId = userId,
-            ProblemIds = new long[] { 1, 2 },
+            ProblemIds = [1, 2],
             IsPublic = false
         };
 
@@ -372,7 +369,7 @@ public class ProblemListServiceTests
             Title = "Title",
             Description = "Description",
             OwnerId = userId,
-            ProblemIds = new long[] { 1, 2, 3 },
+            ProblemIds = [1, 2, 3],
             IsPublic = false
         };
 
@@ -400,7 +397,7 @@ public class ProblemListServiceTests
             Title = "Title",
             Description = "Description",
             OwnerId = userId,
-            ProblemIds = new long[] { 1, 2, 3 },
+            ProblemIds = [1, 2, 3],
             IsPublic = false
         };
 
@@ -429,7 +426,7 @@ public class ProblemListServiceTests
             Title = "Title",
             Description = "Description",
             OwnerId = userId,
-            ProblemIds = new long[] { 1, 2, 3 },
+            ProblemIds = [1, 2, 3],
             IsPublic = false
         };
 
@@ -451,7 +448,7 @@ public class ProblemListServiceTests
             Title = "Title",
             Description = "Description",
             OwnerId = 100L,
-            ProblemIds = new long[] { 1, 2 },
+            ProblemIds = [1, 2],
             IsPublic = true
         };
 
@@ -489,7 +486,7 @@ public class ProblemListServiceTests
             Title = "Title",
             Description = "Description",
             OwnerId = userId,
-            ProblemIds = new long[] { 1, 2 },
+            ProblemIds = [1, 2],
             IsPublic = true
         };
 
@@ -514,7 +511,7 @@ public class ProblemListServiceTests
             Title = "Title",
             Description = "Description",
             OwnerId = ownerId,
-            ProblemIds = new long[] { 1, 2 },
+            ProblemIds = [1, 2],
             IsPublic = true
         };
 

@@ -3,12 +3,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ContentService.Data;
 
-public class ContentDbContext : DbContext
+public class ContentDbContext(DbContextOptions<ContentDbContext> options) : DbContext(options)
 {
-    public ContentDbContext(DbContextOptions<ContentDbContext> options) : base(options)
-    {
-    }
-
     public DbSet<Problem> Problems { get; set; }
     public DbSet<TestCase> TestCases { get; set; }
     public DbSet<Editorial> Editorials { get; set; }
@@ -119,7 +115,7 @@ public class ContentDbContext : DbContext
 
             entity.Property(p => p.AcceptanceRate)
                 .HasColumnName("acceptance_rate")
-                .HasPrecision(5, 2)
+                .HasPrecision(precision: 5, scale: 2)
                 .HasDefaultValue(0);
 
             entity.HasIndex(p => p.Slug)

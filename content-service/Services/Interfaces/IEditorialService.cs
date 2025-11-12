@@ -24,6 +24,15 @@ public interface IEditorialService
         long userId,
         CancellationToken cancellationToken = default);
 
+    Task<Editorial> CreateOrUpdateEditorialAsync(
+        long problemId,
+        long authorId,
+        string content,
+        string timeComplexity,
+        string spaceComplexity,
+        string? videoUrl = null,
+        CancellationToken cancellationToken = default);
+
     Task PublishEditorialAsync(long problemId, long userId, CancellationToken cancellationToken = default);
 
     Task UnpublishEditorialAsync(long problemId, long userId, CancellationToken cancellationToken = default);

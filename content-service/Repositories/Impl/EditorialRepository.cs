@@ -5,32 +5,25 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ContentService.Repositories.Impl;
 
-public class EditorialRepository : IEditorialRepository
+public class EditorialRepository(ContentDbContext context) : IEditorialRepository
 {
-    private readonly ContentDbContext _context;
-
-    public EditorialRepository(ContentDbContext context)
-    {
-        _context = context;
-    }
-
     public async Task<Editorial?> GetByIdAsync(long id)
     {
-        return await _context.Editorials
+        return await context.Editorials
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == id);
     }
 
     public async Task<Editorial?> GetByProblemIdAsync(long problemId)
     {
-        return await _context.Editorials
+        return await context.Editorials
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.ProblemId == problemId);
     }
 
     public async Task<IEnumerable<Editorial>> GetPublishedEditorialsAsync(int page, int pageSize)
     {
-        return await _context.Editorials
+        return await context.Editorials
             .AsNoTracking()
             .Where(e => e.IsPublished)
             .OrderByDescending(e => e.PublishedAt)
@@ -41,35 +34,35 @@ public class EditorialRepository : IEditorialRepository
 
     public async Task<Editorial> CreateAsync(Editorial editorial)
     {
-        await _context.Editorials.AddAsync(editorial);
-        await _context.SaveChangesAsync();
+        await context.Editorials.AddAsync(editorial);
+        await context.SaveChangesAsync();
         return editorial;
     }
 
     public async Task<Editorial> UpdateAsync(Editorial editorial)
     {
         editorial.UpdatedAt = DateTime.UtcNow;
-        _context.Editorials.Update(editorial);
-        await _context.SaveChangesAsync();
+        context.Editorials.Update(editorial);
+        await context.SaveChangesAsync();
         return editorial;
     }
 
     public async Task<bool> DeleteAsync(long id)
     {
-        var editorial = await _context.Editorials.FindAsync(id);
+        var editorial = await context.Editorials.FindAsync(id);
         if (editorial == null)
         {
             return false;
         }
 
-        _context.Editorials.Remove(editorial);
-        await _context.SaveChangesAsync();
+        context.Editorials.Remove(editorial);
+        await context.SaveChangesAsync();
         return true;
     }
 
     public async Task<bool> PublishAsync(long id)
     {
-        var editorial = await _context.Editorials.FindAsync(id);
+        var editorial = await context.Editorials.FindAsync(id);
         if (editorial == null)
         {
             return false;
@@ -78,13 +71,13 @@ public class EditorialRepository : IEditorialRepository
         editorial.IsPublished = true;
         editorial.PublishedAt = DateTime.UtcNow;
         editorial.UpdatedAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
         return true;
     }
 
     public async Task<bool> UnpublishAsync(long id)
     {
-        var editorial = await _context.Editorials.FindAsync(id);
+        var editorial = await context.Editorials.FindAsync(id);
         if (editorial == null)
         {
             return false;
@@ -93,20 +86,20 @@ public class EditorialRepository : IEditorialRepository
         editorial.IsPublished = false;
         editorial.PublishedAt = null;
         editorial.UpdatedAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
         return true;
     }
 
     public async Task<bool> ExistsForProblemAsync(long problemId)
     {
-        return await _context.Editorials
+        return await context.Editorials
             .AsNoTracking()
             .AnyAsync(e => e.ProblemId == problemId);
     }
 
     public async Task<int> GetPublishedCountAsync()
     {
-        return await _context.Editorials
+        return await context.Editorials
             .AsNoTracking()
             .CountAsync(e => e.IsPublished);
     }

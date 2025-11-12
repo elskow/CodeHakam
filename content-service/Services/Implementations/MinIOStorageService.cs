@@ -1,19 +1,17 @@
-namespace ContentService.Services.Implementations;
-
 using ContentService.Services.Interfaces;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using Minio;
 using Minio.DataModel.Args;
 
-public class MinIOStorageService : IStorageService
-{
-    private readonly IMinioClient _minioClient;
-    private readonly ILogger<MinIOStorageService> _logger;
+namespace ContentService.Services.Implementations;
 
-    public MinIOStorageService(
+public class MinIoStorageService : IStorageService
+{
+    private readonly ILogger<MinIoStorageService> _logger;
+    private readonly IMinioClient _minioClient;
+
+    public MinIoStorageService(
         IConfiguration configuration,
-        ILogger<MinIOStorageService> logger)
+        ILogger<MinIoStorageService> logger)
     {
         _logger = logger;
 
@@ -133,7 +131,7 @@ public class MinIOStorageService : IStorageService
         var beArgs = new BucketExistsArgs()
             .WithBucket(bucketName);
 
-        bool found = await _minioClient.BucketExistsAsync(beArgs, cancellationToken);
+        var found = await _minioClient.BucketExistsAsync(beArgs, cancellationToken);
 
         if (!found)
         {

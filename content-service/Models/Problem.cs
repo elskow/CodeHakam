@@ -16,6 +16,7 @@ public sealed class Problem
     public int MemoryLimit { get; set; }
     public long AuthorId { get; set; }
     public ProblemVisibility Visibility { get; set; }
+    public string? HintText { get; set; }
     public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

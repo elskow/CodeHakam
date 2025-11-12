@@ -1,6 +1,7 @@
-namespace ContentService.Services.Interfaces;
-
+using ContentService.Enums;
 using ContentService.Models;
+
+namespace ContentService.Services.Interfaces;
 
 public interface IProblemService
 {
@@ -8,14 +9,16 @@ public interface IProblemService
 
     Task<Problem?> GetProblemBySlugAsync(string slug, CancellationToken cancellationToken = default);
 
-    Task<(IEnumerable<Problem> Problems, int TotalCount)> GetProblemsAsync(
+    Task<IEnumerable<Problem>> GetProblemsAsync(
         int page,
         int pageSize,
+        Difficulty? difficulty = null,
+        ProblemVisibility? visibility = null,
         CancellationToken cancellationToken = default);
 
-    Task<(IEnumerable<Problem> Problems, int TotalCount)> SearchProblemsAsync(
+    Task<IEnumerable<Problem>> SearchProblemsAsync(
         string? searchTerm,
-        string? difficulty,
+        Difficulty? difficulty,
         List<string>? tags,
         int page,
         int pageSize,
@@ -24,22 +27,32 @@ public interface IProblemService
     Task<Problem> CreateProblemAsync(
         string title,
         string description,
-        string difficulty,
+        string inputFormat,
+        string outputFormat,
+        string constraints,
+        Difficulty difficulty,
         int timeLimit,
         int memoryLimit,
-        List<string> tags,
         long authorId,
+        List<string> tags,
+        ProblemVisibility visibility = ProblemVisibility.Public,
+        string? hintText = null,
         CancellationToken cancellationToken = default);
 
     Task<Problem> UpdateProblemAsync(
-        long id,
-        string title,
-        string description,
-        string difficulty,
-        int timeLimit,
-        int memoryLimit,
-        List<string> tags,
+        long problemId,
         long userId,
+        string? title = null,
+        string? description = null,
+        string? inputFormat = null,
+        string? outputFormat = null,
+        string? constraints = null,
+        Difficulty? difficulty = null,
+        int? timeLimit = null,
+        int? memoryLimit = null,
+        List<string>? tags = null,
+        ProblemVisibility? visibility = null,
+        string? hintText = null,
         CancellationToken cancellationToken = default);
 
     Task DeleteProblemAsync(long id, long userId, CancellationToken cancellationToken = default);
@@ -49,6 +62,8 @@ public interface IProblemService
     Task UpdateStatisticsAsync(long id, int submissionCount, int acceptedCount, CancellationToken cancellationToken = default);
 
     Task<IEnumerable<Problem>> GetProblemsByAuthorAsync(long authorId, CancellationToken cancellationToken = default);
+
+    Task<int> GetTotalProblemsCountAsync(CancellationToken cancellationToken = default);
 
     Task<bool> ProblemExistsAsync(long id, CancellationToken cancellationToken = default);
 

@@ -1,29 +1,23 @@
-namespace ContentService.Services.Implementations;
-
 using ContentService.Models;
 using ContentService.Repositories.Interfaces;
 using ContentService.Services.Interfaces;
-using Microsoft.Extensions.Logging;
 
-public class ProblemListService : IProblemListService
+namespace ContentService.Services.Implementations;
+
+public class ProblemListService(
+    IProblemListRepository problemListRepository,
+    IProblemRepository problemRepository,
+    ILogger<ProblemListService> logger)
+    : IProblemListService
 {
-    private readonly IProblemListRepository _problemListRepository;
-    private readonly IProblemRepository _problemRepository;
-    private readonly ILogger<ProblemListService> _logger;
-
-    public ProblemListService(
-        IProblemListRepository problemListRepository,
-        IProblemRepository problemRepository,
-        ILogger<ProblemListService> logger)
-    {
-        _problemListRepository = problemListRepository;
-        _problemRepository = problemRepository;
-        _logger = logger;
-    }
-
     public async Task<ProblemList?> GetProblemListAsync(long id, CancellationToken cancellationToken = default)
     {
-        return await _problemListRepository.GetByIdAsync(id);
+        return await problemListRepository.GetByIdAsync(id);
+    }
+
+    public async Task<ProblemList?> GetListAsync(long id, CancellationToken cancellationToken = default)
+    {
+        return await problemListRepository.GetByIdAsync(id);
     }
 
     public async Task<IEnumerable<ProblemList>> GetProblemListsByOwnerAsync(
@@ -32,7 +26,12 @@ public class ProblemListService : IProblemListService
         int pageSize,
         CancellationToken cancellationToken = default)
     {
-        return await _problemListRepository.GetByOwnerAsync(ownerId, page, pageSize);
+        return await problemListRepository.GetByOwnerAsync(ownerId, page, pageSize);
+    }
+
+    public async Task<IEnumerable<ProblemList>> GetListsByOwnerAsync(long ownerId, CancellationToken cancellationToken = default)
+    {
+        return await problemListRepository.GetByOwnerAsync(ownerId, page: 1, int.MaxValue);
     }
 
     public async Task<IEnumerable<ProblemList>> GetPublicListsAsync(
@@ -40,7 +39,13 @@ public class ProblemListService : IProblemListService
         int pageSize,
         CancellationToken cancellationToken = default)
     {
-        return await _problemListRepository.GetPublicListsAsync(page, pageSize);
+        return await problemListRepository.GetPublicListsAsync(page, pageSize);
+    }
+
+    public async Task<int> GetPublicListsCountAsync(CancellationToken cancellationToken = default)
+    {
+        var lists = await problemListRepository.GetPublicListsAsync(page: 1, int.MaxValue);
+        return lists.Count();
     }
 
     public async Task<ProblemList> CreateProblemListAsync(
@@ -64,9 +69,38 @@ public class ProblemListService : IProblemListService
             UpdatedAt = DateTime.UtcNow
         };
 
-        await _problemListRepository.CreateAsync(problemList);
+        await problemListRepository.CreateAsync(problemList);
 
-        _logger.LogInformation("Problem list created: {ListId} - {Title} by user {OwnerId}",
+        logger.LogInformation("Problem list created: {ListId} - {Title} by user {OwnerId}",
+            problemList.Id, problemList.Title, ownerId);
+
+        return problemList;
+    }
+
+    public async Task<ProblemList> CreateListAsync(
+        string name,
+        string? description,
+        long ownerId,
+        bool isPublic,
+        List<long> problemIds,
+        CancellationToken cancellationToken = default)
+    {
+        await ValidateProblemsExistAsync(problemIds);
+
+        var problemList = new ProblemList
+        {
+            Title = name,
+            Description = description ?? string.Empty,
+            IsPublic = isPublic,
+            OwnerId = ownerId,
+            ProblemIds = problemIds.ToArray(),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        await problemListRepository.CreateAsync(problemList);
+
+        logger.LogInformation("Problem list created: {ListId} - {Title} by user {OwnerId}",
             problemList.Id, problemList.Title, ownerId);
 
         return problemList;
@@ -81,7 +115,7 @@ public class ProblemListService : IProblemListService
         long userId,
         CancellationToken cancellationToken = default)
     {
-        var problemList = await _problemListRepository.GetByIdAsync(id);
+        var problemList = await problemListRepository.GetByIdAsync(id);
         if (problemList == null)
         {
             throw new InvalidOperationException($"Problem list with ID {id} not found");
@@ -100,9 +134,41 @@ public class ProblemListService : IProblemListService
         problemList.ProblemIds = problemIds.ToArray();
         problemList.UpdatedAt = DateTime.UtcNow;
 
-        await _problemListRepository.UpdateAsync(problemList);
+        await problemListRepository.UpdateAsync(problemList);
 
-        _logger.LogInformation("Problem list updated: {ListId} - {Title} by user {UserId}",
+        logger.LogInformation("Problem list updated: {ListId} - {Title} by user {UserId}",
+            problemList.Id, problemList.Title, userId);
+
+        return problemList;
+    }
+
+    public async Task<ProblemList> UpdateListAsync(
+        long listId,
+        long userId,
+        string name,
+        string? description,
+        bool isPublic,
+        CancellationToken cancellationToken = default)
+    {
+        var problemList = await problemListRepository.GetByIdAsync(listId);
+        if (problemList == null)
+        {
+            throw new InvalidOperationException($"Problem list with ID {listId} not found");
+        }
+
+        if (problemList.OwnerId != userId)
+        {
+            throw new UnauthorizedAccessException("Only the list owner can update it");
+        }
+
+        problemList.Title = name;
+        problemList.Description = description ?? string.Empty;
+        problemList.IsPublic = isPublic;
+        problemList.UpdatedAt = DateTime.UtcNow;
+
+        await problemListRepository.UpdateAsync(problemList);
+
+        logger.LogInformation("Problem list updated: {ListId} - {Title} by user {UserId}",
             problemList.Id, problemList.Title, userId);
 
         return problemList;
@@ -110,7 +176,7 @@ public class ProblemListService : IProblemListService
 
     public async Task DeleteProblemListAsync(long id, long userId, CancellationToken cancellationToken = default)
     {
-        var problemList = await _problemListRepository.GetByIdAsync(id);
+        var problemList = await problemListRepository.GetByIdAsync(id);
         if (problemList == null)
         {
             throw new InvalidOperationException($"Problem list with ID {id} not found");
@@ -121,14 +187,19 @@ public class ProblemListService : IProblemListService
             throw new UnauthorizedAccessException("Only the list owner can delete it");
         }
 
-        await _problemListRepository.DeleteAsync(id);
+        await problemListRepository.DeleteAsync(id);
 
-        _logger.LogInformation("Problem list deleted: {ListId} by user {UserId}", id, userId);
+        logger.LogInformation("Problem list deleted: {ListId} by user {UserId}", id, userId);
+    }
+
+    public async Task DeleteListAsync(long id, long userId, CancellationToken cancellationToken = default)
+    {
+        await DeleteProblemListAsync(id, userId, cancellationToken);
     }
 
     public async Task AddProblemToListAsync(long listId, long problemId, long userId, CancellationToken cancellationToken = default)
     {
-        var problemList = await _problemListRepository.GetByIdAsync(listId);
+        var problemList = await problemListRepository.GetByIdAsync(listId);
         if (problemList == null)
         {
             throw new InvalidOperationException($"Problem list with ID {listId} not found");
@@ -139,7 +210,7 @@ public class ProblemListService : IProblemListService
             throw new UnauthorizedAccessException("Only the list owner can modify it");
         }
 
-        var problemExists = await _problemRepository.ExistsAsync(problemId);
+        var problemExists = await problemRepository.ExistsAsync(problemId);
         if (!problemExists)
         {
             throw new InvalidOperationException($"Problem with ID {problemId} not found");
@@ -154,15 +225,15 @@ public class ProblemListService : IProblemListService
         problemList.ProblemIds = newProblemIds.ToArray();
         problemList.UpdatedAt = DateTime.UtcNow;
 
-        await _problemListRepository.UpdateAsync(problemList);
+        await problemListRepository.UpdateAsync(problemList);
 
-        _logger.LogInformation("Problem {ProblemId} added to list {ListId} by user {UserId}",
+        logger.LogInformation("Problem {ProblemId} added to list {ListId} by user {UserId}",
             problemId, listId, userId);
     }
 
     public async Task RemoveProblemFromListAsync(long listId, long problemId, long userId, CancellationToken cancellationToken = default)
     {
-        var problemList = await _problemListRepository.GetByIdAsync(listId);
+        var problemList = await problemListRepository.GetByIdAsync(listId);
         if (problemList == null)
         {
             throw new InvalidOperationException($"Problem list with ID {listId} not found");
@@ -182,21 +253,21 @@ public class ProblemListService : IProblemListService
         problemList.ProblemIds = newProblemIds;
         problemList.UpdatedAt = DateTime.UtcNow;
 
-        await _problemListRepository.UpdateAsync(problemList);
+        await problemListRepository.UpdateAsync(problemList);
 
-        _logger.LogInformation("Problem {ProblemId} removed from list {ListId} by user {UserId}",
+        logger.LogInformation("Problem {ProblemId} removed from list {ListId} by user {UserId}",
             problemId, listId, userId);
     }
 
     public async Task<bool> ProblemListExistsAsync(long id, CancellationToken cancellationToken = default)
     {
-        var problemList = await _problemListRepository.GetByIdAsync(id);
+        var problemList = await problemListRepository.GetByIdAsync(id);
         return problemList != null;
     }
 
     public async Task<bool> IsOwnerAsync(long listId, long userId, CancellationToken cancellationToken = default)
     {
-        var problemList = await _problemListRepository.GetByIdAsync(listId);
+        var problemList = await problemListRepository.GetByIdAsync(listId);
         return problemList?.OwnerId == userId;
     }
 
@@ -204,7 +275,7 @@ public class ProblemListService : IProblemListService
     {
         foreach (var problemId in problemIds)
         {
-            var exists = await _problemRepository.ExistsAsync(problemId);
+            var exists = await problemRepository.ExistsAsync(problemId);
             if (!exists)
             {
                 throw new InvalidOperationException($"Problem with ID {problemId} not found");

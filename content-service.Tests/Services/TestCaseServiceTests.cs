@@ -1,30 +1,23 @@
-namespace ContentService.Tests.Services;
-
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Text;
 using ContentService.Enums;
 using ContentService.Models;
 using ContentService.Repositories.Interfaces;
 using ContentService.Services.Implementations;
 using ContentService.Services.Interfaces;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
-using Xunit;
+
+namespace ContentService.Tests.Services;
 
 public class TestCaseServiceTests
 {
-    private readonly Mock<ITestCaseRepository> _testCaseRepositoryMock;
-    private readonly Mock<IProblemRepository> _problemRepositoryMock;
-    private readonly Mock<IStorageService> _storageServiceMock;
     private readonly Mock<IEventPublisher> _eventPublisherMock;
-    private readonly Mock<IConfiguration> _configurationMock;
-    private readonly Mock<ILogger<TestCaseService>> _loggerMock;
+    private readonly Mock<IProblemRepository> _problemRepositoryMock;
     private readonly TestCaseService _service;
+    private readonly Mock<IStorageService> _storageServiceMock;
+    private readonly Mock<ITestCaseRepository> _testCaseRepositoryMock;
 
     public TestCaseServiceTests()
     {
@@ -32,14 +25,14 @@ public class TestCaseServiceTests
         _problemRepositoryMock = new Mock<IProblemRepository>();
         _storageServiceMock = new Mock<IStorageService>();
         _eventPublisherMock = new Mock<IEventPublisher>();
-        _configurationMock = new Mock<IConfiguration>();
-        _loggerMock = new Mock<ILogger<TestCaseService>>();
+        var configurationMock = new Mock<IConfiguration>();
+        var loggerMock = new Mock<ILogger<TestCaseService>>();
 
-        _configurationMock
+        configurationMock
             .Setup(c => c["ContentService:MaxTestCaseFileSize"])
             .Returns("10485760");
 
-        _configurationMock
+        configurationMock
             .Setup(c => c["MinIO:BucketName"])
             .Returns("codehakam-testcases");
 
@@ -48,8 +41,8 @@ public class TestCaseServiceTests
             _problemRepositoryMock.Object,
             _storageServiceMock.Object,
             _eventPublisherMock.Object,
-            _configurationMock.Object,
-            _loggerMock.Object);
+            configurationMock.Object,
+            loggerMock.Object);
     }
 
     [Fact]
@@ -62,7 +55,8 @@ public class TestCaseServiceTests
             ProblemId = 10L,
             InputFileUrl = "path/to/input.txt",
             OutputFileUrl = "path/to/output.txt",
-            IsSample = true
+            IsSample = true,
+            TestNumber = 1
         };
 
         _testCaseRepositoryMock
@@ -73,7 +67,7 @@ public class TestCaseServiceTests
 
         Assert.NotNull(result);
         Assert.Equal(testCaseId, result.Id);
-        Assert.Equal(10L, result.ProblemId);
+        Assert.Equal(expected: 10L, result.ProblemId);
     }
 
     [Fact]
@@ -96,8 +90,10 @@ public class TestCaseServiceTests
         var problemId = 10L;
         var sampleTestCases = new List<TestCase>
         {
-            new TestCase { Id = 1, ProblemId = problemId, InputFileUrl = "input1.txt", OutputFileUrl = "output1.txt", IsSample = true },
-            new TestCase { Id = 2, ProblemId = problemId, InputFileUrl = "input2.txt", OutputFileUrl = "output2.txt", IsSample = true }
+            new()
+                { Id = 1, ProblemId = problemId, InputFileUrl = "input1.txt", OutputFileUrl = "output1.txt", IsSample = true, TestNumber = 1 },
+            new()
+                { Id = 2, ProblemId = problemId, InputFileUrl = "input2.txt", OutputFileUrl = "output2.txt", IsSample = true, TestNumber = 2 }
         };
 
         _testCaseRepositoryMock
@@ -106,8 +102,9 @@ public class TestCaseServiceTests
 
         var result = await _service.GetTestCasesAsync(problemId, samplesOnly: true);
 
-        Assert.Equal(2, result.Count());
-        Assert.All(result, tc => Assert.True(tc.IsSample));
+        IEnumerable<TestCase> testCases = result as TestCase[] ?? result.ToArray();
+        Assert.Equal(expected: 2, testCases.Count());
+        Assert.All(testCases, tc => Assert.True(tc.IsSample));
     }
 
     [Fact]
@@ -116,9 +113,12 @@ public class TestCaseServiceTests
         var problemId = 10L;
         var allTestCases = new List<TestCase>
         {
-            new TestCase { Id = 1, ProblemId = problemId, InputFileUrl = "input1.txt", OutputFileUrl = "output1.txt", IsSample = true },
-            new TestCase { Id = 2, ProblemId = problemId, InputFileUrl = "input2.txt", OutputFileUrl = "output2.txt", IsSample = false },
-            new TestCase { Id = 3, ProblemId = problemId, InputFileUrl = "input3.txt", OutputFileUrl = "output3.txt", IsSample = false }
+            new()
+                { Id = 1, ProblemId = problemId, InputFileUrl = "input1.txt", OutputFileUrl = "output1.txt", IsSample = true, TestNumber = 1 },
+            new()
+                { Id = 2, ProblemId = problemId, InputFileUrl = "input2.txt", OutputFileUrl = "output2.txt", IsSample = false, TestNumber = 2 },
+            new()
+                { Id = 3, ProblemId = problemId, InputFileUrl = "input3.txt", OutputFileUrl = "output3.txt", IsSample = false, TestNumber = 3 }
         };
 
         _testCaseRepositoryMock
@@ -127,7 +127,7 @@ public class TestCaseServiceTests
 
         var result = await _service.GetTestCasesAsync(problemId, samplesOnly: false);
 
-        Assert.Equal(3, result.Count());
+        Assert.Equal(expected: 3, result.Count());
     }
 
     [Fact]
@@ -141,20 +141,26 @@ public class TestCaseServiceTests
 
         var result = await _service.GetTestCaseCountAsync(problemId);
 
-        Assert.Equal(5, result);
+        Assert.Equal(expected: 5, result);
     }
 
     [Fact]
     public async Task UploadTestCaseAsync_WithValidData_ShouldUploadAndCreateTestCase()
     {
-        var problemId = 10L;
+        var problemId = 1L;
         var userId = 100L;
-        var inputData = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("1 2"));
-        var outputData = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("3"));
-        var inputSize = 3L;
-        var outputSize = 1L;
         var isSample = true;
-        var orderIndex = 1;
+        var testNumber = 1;
+        var inputSize = 1024L;
+        var outputSize = 512L;
+
+        var inputFileMock = new Mock<IFormFile>();
+        inputFileMock.Setup(f => f.Length).Returns(inputSize);
+        inputFileMock.Setup(f => f.OpenReadStream()).Returns(new MemoryStream());
+
+        var outputFileMock = new Mock<IFormFile>();
+        outputFileMock.Setup(f => f.Length).Returns(outputSize);
+        outputFileMock.Setup(f => f.OpenReadStream()).Returns(new MemoryStream());
 
         var problem = new Problem
         {
@@ -162,8 +168,8 @@ public class TestCaseServiceTests
             Title = "Test Problem",
             Slug = "test-problem",
             Description = "Description",
-            InputFormat = "Input format",
-            OutputFormat = "Output format",
+            InputFormat = "Input",
+            OutputFormat = "Output",
             Constraints = "Constraints",
             Difficulty = Difficulty.Easy,
             AuthorId = userId
@@ -174,10 +180,6 @@ public class TestCaseServiceTests
             .ReturnsAsync(problem);
 
         _storageServiceMock
-            .Setup(s => s.EnsureBucketExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        _storageServiceMock
             .Setup(s => s.UploadFileAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
@@ -185,7 +187,7 @@ public class TestCaseServiceTests
                 It.IsAny<long>(),
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string bucket, string path, Stream data, long size, string contentType, CancellationToken ct) => path);
+            .ReturnsAsync("uploaded-object-path");
 
         _testCaseRepositoryMock
             .Setup(r => r.CreateAsync(It.IsAny<TestCase>()))
@@ -199,26 +201,23 @@ public class TestCaseServiceTests
             .Setup(e => e.PublishTestCaseUploadedAsync(
                 It.IsAny<long>(),
                 It.IsAny<long>(),
+                It.IsAny<int>(),
                 It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var result = await _service.UploadTestCaseAsync(
             problemId,
-            inputData,
-            outputData,
-            inputSize,
-            outputSize,
+            inputFileMock.Object,
+            outputFileMock.Object,
             isSample,
-            orderIndex,
+            testNumber,
             userId);
 
         Assert.NotNull(result);
         Assert.Equal(problemId, result.ProblemId);
         Assert.Equal(isSample, result.IsSample);
-        Assert.Equal(orderIndex, result.TestNumber);
-        Assert.Equal(inputSize, result.InputSize);
-        Assert.Equal(outputSize, result.OutputSize);
+        Assert.Equal(testNumber, result.TestNumber);
 
         _storageServiceMock.Verify(
             s => s.UploadFileAsync(
@@ -232,7 +231,7 @@ public class TestCaseServiceTests
 
         _testCaseRepositoryMock.Verify(r => r.CreateAsync(It.IsAny<TestCase>()), Times.Once);
         _eventPublisherMock.Verify(
-            e => e.PublishTestCaseUploadedAsync(problemId, It.IsAny<long>(), isSample, It.IsAny<CancellationToken>()),
+            e => e.PublishTestCaseUploadedAsync(It.IsAny<long>(), problemId, testNumber, isSample, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -241,33 +240,33 @@ public class TestCaseServiceTests
     {
         var problemId = 999L;
         var userId = 100L;
-        var inputData = new MemoryStream();
-        var outputData = new MemoryStream();
+
+        var inputFileMock = new Mock<IFormFile>();
+        inputFileMock.Setup(f => f.Length).Returns(1024L);
+
+        var outputFileMock = new Mock<IFormFile>();
+        outputFileMock.Setup(f => f.Length).Returns(512L);
 
         _problemRepositoryMock
             .Setup(r => r.GetByIdAsync(problemId, false))
             .ReturnsAsync((Problem?)null);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _service.UploadTestCaseAsync(
-                problemId,
-                inputData,
-                outputData,
-                100L,
-                100L,
-                true,
-                1,
-                userId));
+        await Assert.ThrowsAsync<KeyNotFoundException>(async () =>
+            await _service.UploadTestCaseAsync(problemId, inputFileMock.Object, outputFileMock.Object, isSample: true, testNumber: 1, userId));
     }
 
     [Fact]
     public async Task UploadTestCaseAsync_WithUnauthorizedUser_ShouldThrowException()
     {
-        var problemId = 10L;
+        var problemId = 1L;
         var authorId = 100L;
         var differentUserId = 200L;
-        var inputData = new MemoryStream();
-        var outputData = new MemoryStream();
+
+        var inputFileMock = new Mock<IFormFile>();
+        inputFileMock.Setup(f => f.Length).Returns(1024L);
+
+        var outputFileMock = new Mock<IFormFile>();
+        outputFileMock.Setup(f => f.Length).Returns(512L);
 
         var problem = new Problem
         {
@@ -275,8 +274,8 @@ public class TestCaseServiceTests
             Title = "Test Problem",
             Slug = "test-problem",
             Description = "Description",
-            InputFormat = "Input format",
-            OutputFormat = "Output format",
+            InputFormat = "Input",
+            OutputFormat = "Output",
             Constraints = "Constraints",
             Difficulty = Difficulty.Easy,
             AuthorId = authorId
@@ -287,25 +286,21 @@ public class TestCaseServiceTests
             .ReturnsAsync(problem);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(async () =>
-            await _service.UploadTestCaseAsync(
-                problemId,
-                inputData,
-                outputData,
-                100L,
-                100L,
-                true,
-                1,
-                differentUserId));
+            await _service.UploadTestCaseAsync(problemId, inputFileMock.Object, outputFileMock.Object, isSample: true, testNumber: 1, differentUserId));
     }
 
     [Fact]
-    public async Task UploadTestCaseAsync_WithExcessiveInputSize_ShouldThrowException()
+    public async Task UploadTestCaseAsync_WithExcessiveFileSize_ShouldThrowException()
     {
-        var problemId = 10L;
+        var problemId = 1L;
         var userId = 100L;
-        var inputData = new MemoryStream();
-        var outputData = new MemoryStream();
-        var excessiveSize = 11000000L;
+        var excessiveSize = 11 * 1024 * 1024L; // 11 MB
+
+        var inputFileMock = new Mock<IFormFile>();
+        inputFileMock.Setup(f => f.Length).Returns(excessiveSize);
+
+        var outputFileMock = new Mock<IFormFile>();
+        outputFileMock.Setup(f => f.Length).Returns(512L);
 
         var problem = new Problem
         {
@@ -313,8 +308,8 @@ public class TestCaseServiceTests
             Title = "Test Problem",
             Slug = "test-problem",
             Description = "Description",
-            InputFormat = "Input format",
-            OutputFormat = "Output format",
+            InputFormat = "Input",
+            OutputFormat = "Output",
             Constraints = "Constraints",
             Difficulty = Difficulty.Easy,
             AuthorId = userId
@@ -325,53 +320,7 @@ public class TestCaseServiceTests
             .ReturnsAsync(problem);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _service.UploadTestCaseAsync(
-                problemId,
-                inputData,
-                outputData,
-                excessiveSize,
-                100L,
-                true,
-                1,
-                userId));
-    }
-
-    [Fact]
-    public async Task UploadTestCaseAsync_WithExcessiveOutputSize_ShouldThrowException()
-    {
-        var problemId = 10L;
-        var userId = 100L;
-        var inputData = new MemoryStream();
-        var outputData = new MemoryStream();
-        var excessiveSize = 11000000L;
-
-        var problem = new Problem
-        {
-            Id = problemId,
-            Title = "Test Problem",
-            Slug = "test-problem",
-            Description = "Description",
-            InputFormat = "Input format",
-            OutputFormat = "Output format",
-            Constraints = "Constraints",
-            Difficulty = Difficulty.Easy,
-            AuthorId = userId
-        };
-
-        _problemRepositoryMock
-            .Setup(r => r.GetByIdAsync(problemId, false))
-            .ReturnsAsync(problem);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _service.UploadTestCaseAsync(
-                problemId,
-                inputData,
-                outputData,
-                100L,
-                excessiveSize,
-                true,
-                1,
-                userId));
+            await _service.UploadTestCaseAsync(problemId, inputFileMock.Object, outputFileMock.Object, isSample: true, testNumber: 1, userId));
     }
 
     [Fact]
@@ -385,9 +334,10 @@ public class TestCaseServiceTests
         {
             Id = testCaseId,
             ProblemId = problemId,
-            InputFileUrl = "path/to/input.txt",
-            OutputFileUrl = "path/to/output.txt",
-            IsSample = false
+            InputFileUrl = "codehakam-testcases/problem-10/test-1/input.txt",
+            OutputFileUrl = "codehakam-testcases/problem-10/test-1/output.txt",
+            IsSample = true,
+            TestNumber = 1
         };
 
         var problem = new Problem
@@ -396,8 +346,8 @@ public class TestCaseServiceTests
             Title = "Test Problem",
             Slug = "test-problem",
             Description = "Description",
-            InputFormat = "Input format",
-            OutputFormat = "Output format",
+            InputFormat = "Input",
+            OutputFormat = "Output",
             Constraints = "Constraints",
             Difficulty = Difficulty.Easy,
             AuthorId = userId
@@ -412,25 +362,30 @@ public class TestCaseServiceTests
             .ReturnsAsync(problem);
 
         _storageServiceMock
-            .Setup(s => s.DeleteFileAsync(
-                It.IsAny<string>(),
-                It.IsAny<string>(),
-                It.IsAny<CancellationToken>()))
+            .Setup(s => s.FileExistsAsync(It.IsAny<string>(), It.IsAny<string>(), CancellationToken.None))
+            .ReturnsAsync(true);
+
+        _storageServiceMock
+            .Setup(s => s.DeleteFileAsync(It.IsAny<string>(), It.IsAny<string>(), CancellationToken.None))
             .Returns(Task.CompletedTask);
 
         _testCaseRepositoryMock
             .Setup(r => r.DeleteAsync(testCaseId))
             .ReturnsAsync(true);
 
+        _eventPublisherMock
+            .Setup(e => e.PublishTestCaseDeletedAsync(
+                It.IsAny<long>(),
+                It.IsAny<long>(),
+                It.IsAny<int>(),
+                CancellationToken.None))
+            .Returns(Task.CompletedTask);
+
         await _service.DeleteTestCaseAsync(testCaseId, userId);
 
         _storageServiceMock.Verify(
-            s => s.DeleteFileAsync("codehakam-testcases", testCase.InputFileUrl, It.IsAny<CancellationToken>()),
-            Times.Once);
-
-        _storageServiceMock.Verify(
-            s => s.DeleteFileAsync("codehakam-testcases", testCase.OutputFileUrl, It.IsAny<CancellationToken>()),
-            Times.Once);
+            s => s.DeleteFileAsync("codehakam-testcases", It.IsAny<string>(), CancellationToken.None),
+            Times.Exactly(2));
 
         _testCaseRepositoryMock.Verify(r => r.DeleteAsync(testCaseId), Times.Once);
     }
@@ -445,7 +400,7 @@ public class TestCaseServiceTests
             .Setup(r => r.GetByIdAsync(testCaseId))
             .ReturnsAsync((TestCase?)null);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        await Assert.ThrowsAsync<KeyNotFoundException>(async () =>
             await _service.DeleteTestCaseAsync(testCaseId, userId));
     }
 
@@ -463,7 +418,8 @@ public class TestCaseServiceTests
             ProblemId = problemId,
             InputFileUrl = "path/to/input.txt",
             OutputFileUrl = "path/to/output.txt",
-            IsSample = false
+            IsSample = true,
+            TestNumber = 1
         };
 
         var problem = new Problem
@@ -472,8 +428,8 @@ public class TestCaseServiceTests
             Title = "Test Problem",
             Slug = "test-problem",
             Description = "Description",
-            InputFormat = "Input format",
-            OutputFormat = "Output format",
+            InputFormat = "Input",
+            OutputFormat = "Output",
             Constraints = "Constraints",
             Difficulty = Difficulty.Easy,
             AuthorId = authorId
@@ -499,12 +455,13 @@ public class TestCaseServiceTests
         {
             Id = testCaseId,
             ProblemId = 10L,
-            InputFileUrl = "path/to/input.txt",
-            OutputFileUrl = "path/to/output.txt",
-            IsSample = true
+            InputFileUrl = "codehakam-testcases/problem-10/test-1/input.txt",
+            OutputFileUrl = "codehakam-testcases/problem-10/test-1/output.txt",
+            IsSample = true,
+            TestNumber = 1
         };
 
-        var expectedStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("test data"));
+        var expectedStream = new MemoryStream(Encoding.UTF8.GetBytes("test input"));
 
         _testCaseRepositoryMock
             .Setup(r => r.GetByIdAsync(testCaseId))
@@ -513,14 +470,17 @@ public class TestCaseServiceTests
         _storageServiceMock
             .Setup(s => s.DownloadFileAsync(
                 "codehakam-testcases",
-                testCase.InputFileUrl,
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedStream);
 
-        var result = await _service.DownloadTestCaseInputAsync(testCaseId);
+        var (stream, contentType, fileName) = await _service.DownloadTestCaseInputAsync(testCaseId);
 
-        Assert.NotNull(result);
-        Assert.Equal(expectedStream, result);
+        Assert.NotNull(stream);
+        Assert.Equal(expectedStream, stream);
+        Assert.Equal("text/plain", contentType);
+        Assert.NotNull(fileName);
+        Assert.Contains("input", fileName);
     }
 
     [Fact]
@@ -532,7 +492,7 @@ public class TestCaseServiceTests
             .Setup(r => r.GetByIdAsync(testCaseId))
             .ReturnsAsync((TestCase?)null);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        await Assert.ThrowsAsync<KeyNotFoundException>(async () =>
             await _service.DownloadTestCaseInputAsync(testCaseId));
     }
 
@@ -544,12 +504,13 @@ public class TestCaseServiceTests
         {
             Id = testCaseId,
             ProblemId = 10L,
-            InputFileUrl = "path/to/input.txt",
-            OutputFileUrl = "path/to/output.txt",
-            IsSample = true
+            InputFileUrl = "codehakam-testcases/problem-10/test-1/input.txt",
+            OutputFileUrl = "codehakam-testcases/problem-10/test-1/output.txt",
+            IsSample = true,
+            TestNumber = 1
         };
 
-        var expectedStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("expected output"));
+        var expectedStream = new MemoryStream(Encoding.UTF8.GetBytes("expected output"));
 
         _testCaseRepositoryMock
             .Setup(r => r.GetByIdAsync(testCaseId))
@@ -558,14 +519,17 @@ public class TestCaseServiceTests
         _storageServiceMock
             .Setup(s => s.DownloadFileAsync(
                 "codehakam-testcases",
-                testCase.OutputFileUrl,
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedStream);
 
-        var result = await _service.DownloadTestCaseOutputAsync(testCaseId);
+        var (stream, contentType, fileName) = await _service.DownloadTestCaseOutputAsync(testCaseId);
 
-        Assert.NotNull(result);
-        Assert.Equal(expectedStream, result);
+        Assert.NotNull(stream);
+        Assert.Equal(expectedStream, stream);
+        Assert.Equal("text/plain", contentType);
+        Assert.NotNull(fileName);
+        Assert.Contains("output", fileName);
     }
 
     [Fact]
@@ -577,14 +541,14 @@ public class TestCaseServiceTests
             .Setup(r => r.GetByIdAsync(testCaseId))
             .ReturnsAsync((TestCase?)null);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        await Assert.ThrowsAsync<KeyNotFoundException>(async () =>
             await _service.DownloadTestCaseOutputAsync(testCaseId));
     }
 
     [Fact]
     public async Task ValidateTestCaseSizeAsync_WithValidSize_ShouldReturnTrue()
     {
-        var validSize = 5000000L;
+        var validSize = 1024L;
 
         var result = await _service.ValidateTestCaseSizeAsync(validSize);
 

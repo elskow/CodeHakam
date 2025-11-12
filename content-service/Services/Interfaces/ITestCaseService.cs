@@ -1,6 +1,7 @@
-namespace ContentService.Services.Interfaces;
-
 using ContentService.Models;
+using Microsoft.AspNetCore.Http;
+
+namespace ContentService.Services.Interfaces;
 
 public interface ITestCaseService
 {
@@ -10,22 +11,22 @@ public interface ITestCaseService
 
     Task<int> GetTestCaseCountAsync(long problemId, CancellationToken cancellationToken = default);
 
+    Task<int> GetSampleTestCaseCountAsync(long problemId, CancellationToken cancellationToken = default);
+
     Task<TestCase> UploadTestCaseAsync(
         long problemId,
-        Stream inputData,
-        Stream outputData,
-        long inputSize,
-        long outputSize,
+        IFormFile inputFile,
+        IFormFile outputFile,
         bool isSample,
-        int orderIndex,
+        int testNumber,
         long userId,
         CancellationToken cancellationToken = default);
 
     Task DeleteTestCaseAsync(long testCaseId, long userId, CancellationToken cancellationToken = default);
 
-    Task<Stream> DownloadTestCaseInputAsync(long testCaseId, CancellationToken cancellationToken = default);
+    Task<(Stream stream, string contentType, string fileName)> DownloadTestCaseInputAsync(long testCaseId, CancellationToken cancellationToken = default);
 
-    Task<Stream> DownloadTestCaseOutputAsync(long testCaseId, CancellationToken cancellationToken = default);
+    Task<(Stream stream, string contentType, string fileName)> DownloadTestCaseOutputAsync(long testCaseId, CancellationToken cancellationToken = default);
 
     Task<bool> ValidateTestCaseSizeAsync(long size, CancellationToken cancellationToken = default);
 }

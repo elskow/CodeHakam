@@ -5,9 +5,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using ContentService.Enums;
-using ContentService.Models;
-using ContentService.Repositories.Interfaces;
+using Enums;
+using Models;
+using Repositories.Interfaces;
 using ContentService.Services.Implementations;
 using ContentService.Services.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -19,7 +19,6 @@ public class DiscussionServiceTests
     private readonly Mock<IDiscussionRepository> _discussionRepositoryMock;
     private readonly Mock<IProblemRepository> _problemRepositoryMock;
     private readonly Mock<IEventPublisher> _eventPublisherMock;
-    private readonly Mock<ILogger<DiscussionService>> _loggerMock;
     private readonly DiscussionService _service;
 
     public DiscussionServiceTests()
@@ -27,13 +26,13 @@ public class DiscussionServiceTests
         _discussionRepositoryMock = new Mock<IDiscussionRepository>();
         _problemRepositoryMock = new Mock<IProblemRepository>();
         _eventPublisherMock = new Mock<IEventPublisher>();
-        _loggerMock = new Mock<ILogger<DiscussionService>>();
+        var loggerMock = new Mock<ILogger<DiscussionService>>();
 
         _service = new DiscussionService(
             _discussionRepositoryMock.Object,
             _problemRepositoryMock.Object,
             _eventPublisherMock.Object,
-            _loggerMock.Object);
+            loggerMock.Object);
     }
 
     [Fact]
@@ -181,7 +180,7 @@ public class DiscussionServiceTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var result = await _service.CreateDiscussionAsync(problemId, title, content, authorId);
+        var result = await _service.CreateDiscussionAsync(problemId, authorId, title, content);
 
         Assert.NotNull(result);
         Assert.Equal(problemId, result.ProblemId);
@@ -206,7 +205,7 @@ public class DiscussionServiceTests
             .ReturnsAsync((Problem?)null);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _service.CreateDiscussionAsync(problemId, "Title", "Content", 100L));
+            await _service.CreateDiscussionAsync(problemId, 100L, "Title", "Content"));
     }
 
     [Fact]
@@ -232,7 +231,7 @@ public class DiscussionServiceTests
             .Setup(r => r.UpdateAsync(It.IsAny<Discussion>()))
             .ReturnsAsync((Discussion d) => d);
 
-        var result = await _service.UpdateDiscussionAsync(discussionId, "New title", "New content", userId);
+        var result = await _service.UpdateDiscussionAsync(discussionId, userId, "New title", "New content");
 
         Assert.Equal("New title", result.Title);
         Assert.Equal("New content", result.Content);
@@ -250,7 +249,7 @@ public class DiscussionServiceTests
             .ReturnsAsync((Discussion?)null);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _service.UpdateDiscussionAsync(discussionId, "Title", "Content", 100L));
+            await _service.UpdateDiscussionAsync(discussionId, 100L, "Title", "Content"));
     }
 
     [Fact]
@@ -273,7 +272,7 @@ public class DiscussionServiceTests
             .ReturnsAsync(discussion);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(async () =>
-            await _service.UpdateDiscussionAsync(discussionId, "New title", "New content", differentUserId));
+            await _service.UpdateDiscussionAsync(discussionId, differentUserId, "New title", "New content"));
     }
 
     [Fact]
@@ -357,7 +356,7 @@ public class DiscussionServiceTests
             .Setup(r => r.IncrementCommentCountAsync(discussionId))
             .Returns(Task.CompletedTask);
 
-        var result = await _service.AddCommentAsync(discussionId, content, authorId);
+        var result = await _service.AddCommentAsync(discussionId, authorId, content);
 
         Assert.NotNull(result);
         Assert.Equal(discussionId, result.DiscussionId);
@@ -413,7 +412,7 @@ public class DiscussionServiceTests
             .Setup(r => r.IncrementCommentCountAsync(discussionId))
             .Returns(Task.CompletedTask);
 
-        var result = await _service.AddCommentAsync(discussionId, content, authorId, parentCommentId);
+        var result = await _service.AddCommentAsync(discussionId, authorId, content, parentCommentId);
 
         Assert.NotNull(result);
         Assert.Equal(discussionId, result.DiscussionId);
@@ -427,6 +426,8 @@ public class DiscussionServiceTests
     {
         var discussionId = 1L;
         var parentCommentId = 999L;
+        var authorId = 100L;
+        var content = "Test comment";
 
         var discussion = new Discussion
         {
@@ -446,7 +447,7 @@ public class DiscussionServiceTests
             .ReturnsAsync((DiscussionComment?)null);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _service.AddCommentAsync(discussionId, "Content", 100L, parentCommentId));
+            await _service.AddCommentAsync(discussionId, authorId, content, parentCommentId));
     }
 
     [Fact]

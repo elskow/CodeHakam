@@ -1,111 +1,97 @@
-namespace ContentService.Services.Implementations;
-
 using System.Text.RegularExpressions;
 using ContentService.Enums;
 using ContentService.Models;
 using ContentService.Repositories.Interfaces;
 using ContentService.Services.Interfaces;
-using Microsoft.Extensions.Logging;
 
-public class ProblemService : IProblemService
+namespace ContentService.Services.Implementations;
+
+public class ProblemService(
+    IProblemRepository problemRepository,
+    IEventPublisher eventPublisher,
+    ILogger<ProblemService> logger)
+    : IProblemService
 {
-    private readonly IProblemRepository _problemRepository;
-    private readonly IEventPublisher _eventPublisher;
-    private readonly ILogger<ProblemService> _logger;
-
-    public ProblemService(
-        IProblemRepository problemRepository,
-        IEventPublisher eventPublisher,
-        ILogger<ProblemService> logger)
-    {
-        _problemRepository = problemRepository;
-        _eventPublisher = eventPublisher;
-        _logger = logger;
-    }
-
     public async Task<Problem?> GetProblemAsync(long id, CancellationToken cancellationToken = default)
     {
-        return await _problemRepository.GetByIdAsync(id, includeRelated: true);
+        return await problemRepository.GetByIdAsync(id, includeRelated: true);
     }
 
     public async Task<Problem?> GetProblemBySlugAsync(string slug, CancellationToken cancellationToken = default)
     {
-        return await _problemRepository.GetBySlugAsync(slug, includeRelated: true);
+        return await problemRepository.GetBySlugAsync(slug, includeRelated: true);
     }
 
-    public async Task<(IEnumerable<Problem> Problems, int TotalCount)> GetProblemsAsync(
+    public async Task<IEnumerable<Problem>> GetProblemsAsync(
         int page,
         int pageSize,
+        Difficulty? difficulty = null,
+        ProblemVisibility? visibility = null,
         CancellationToken cancellationToken = default)
     {
-        var problems = await _problemRepository.GetAllAsync(page, pageSize);
-        var totalCount = await _problemRepository.GetTotalCountAsync();
-
-        return (problems, totalCount);
+        return await problemRepository.SearchAsync(
+            searchTerm: null,
+            difficulty,
+            tag: null,
+            visibility,
+            page,
+            pageSize);
     }
 
-    public async Task<(IEnumerable<Problem> Problems, int TotalCount)> SearchProblemsAsync(
+    public async Task<IEnumerable<Problem>> SearchProblemsAsync(
         string? searchTerm,
-        string? difficulty,
+        Difficulty? difficulty,
         List<string>? tags,
         int page,
         int pageSize,
         CancellationToken cancellationToken = default)
     {
-        Difficulty? difficultyEnum = null;
-        if (!string.IsNullOrEmpty(difficulty))
-        {
-            difficultyEnum = Enum.Parse<Difficulty>(difficulty, ignoreCase: true);
-        }
-
         var tag = tags?.FirstOrDefault();
-        var problems = await _problemRepository.SearchAsync(
+        return await problemRepository.SearchAsync(
             searchTerm,
-            difficultyEnum,
+            difficulty,
             tag,
-            null,
+            visibility: null,
             page,
             pageSize);
-
-        var totalCount = await _problemRepository.GetSearchCountAsync(
-            searchTerm,
-            difficultyEnum,
-            tag,
-            null);
-
-        return (problems, totalCount);
     }
 
     public async Task<Problem> CreateProblemAsync(
         string title,
         string description,
-        string difficulty,
+        string inputFormat,
+        string outputFormat,
+        string constraints,
+        Difficulty difficulty,
         int timeLimit,
         int memoryLimit,
-        List<string> tags,
         long authorId,
+        List<string> tags,
+        ProblemVisibility visibility = ProblemVisibility.Public,
+        string? hintText = null,
         CancellationToken cancellationToken = default)
     {
         var slug = await GenerateUniqueSlugAsync(title);
-        var difficultyEnum = Enum.Parse<Difficulty>(difficulty, ignoreCase: true);
 
         var problem = new Problem
         {
             Title = title,
             Slug = slug,
             Description = description,
-            InputFormat = string.Empty,
-            OutputFormat = string.Empty,
-            Constraints = string.Empty,
-            Difficulty = difficultyEnum,
+            InputFormat = inputFormat,
+            OutputFormat = outputFormat,
+            Constraints = constraints,
+            Difficulty = difficulty,
             TimeLimit = timeLimit,
             MemoryLimit = memoryLimit,
             AuthorId = authorId,
-            Visibility = ProblemVisibility.Private,
+            Visibility = visibility,
+            HintText = hintText,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
 
+        // Normalize tags
         var problemTags = tags.Select(t => new ProblemTag
         {
             Tag = t.Trim().ToLowerInvariant()
@@ -113,12 +99,12 @@ public class ProblemService : IProblemService
 
         problem.Tags = problemTags;
 
-        await _problemRepository.CreateAsync(problem);
+        await problemRepository.CreateAsync(problem);
 
-        _logger.LogInformation("Problem created: {ProblemId} - {Title} by user {AuthorId}",
+        logger.LogInformation("Problem created: {ProblemId} - {Title} by user {AuthorId}",
             problem.Id, problem.Title, authorId);
 
-        await _eventPublisher.PublishProblemCreatedAsync(
+        await eventPublisher.PublishProblemCreatedAsync(
             problem.Id,
             problem.Title,
             problem.Slug,
@@ -129,20 +115,25 @@ public class ProblemService : IProblemService
     }
 
     public async Task<Problem> UpdateProblemAsync(
-        long id,
-        string title,
-        string description,
-        string difficulty,
-        int timeLimit,
-        int memoryLimit,
-        List<string> tags,
+        long problemId,
         long userId,
+        string? title = null,
+        string? description = null,
+        string? inputFormat = null,
+        string? outputFormat = null,
+        string? constraints = null,
+        Difficulty? difficulty = null,
+        int? timeLimit = null,
+        int? memoryLimit = null,
+        List<string>? tags = null,
+        ProblemVisibility? visibility = null,
+        string? hintText = null,
         CancellationToken cancellationToken = default)
     {
-        var problem = await _problemRepository.GetByIdAsync(id);
+        var problem = await problemRepository.GetByIdAsync(problemId, includeRelated: true);
         if (problem == null)
         {
-            throw new InvalidOperationException($"Problem with ID {id} not found");
+            throw new KeyNotFoundException($"Problem with ID {problemId} not found");
         }
 
         if (problem.AuthorId != userId)
@@ -150,27 +141,69 @@ public class ProblemService : IProblemService
             throw new UnauthorizedAccessException("Only the author can update this problem");
         }
 
-        var difficultyEnum = Enum.Parse<Difficulty>(difficulty, ignoreCase: true);
-
-        problem.Title = title;
-        problem.Description = description;
-        problem.Difficulty = difficultyEnum;
-        problem.TimeLimit = timeLimit;
-        problem.MemoryLimit = memoryLimit;
-        problem.UpdatedAt = DateTime.UtcNow;
-
-        problem.Tags.Clear();
-        foreach (var tag in tags)
+        // Update only non-null fields
+        if (title != null)
         {
-            problem.Tags.Add(new ProblemTag { Tag = tag.Trim().ToLowerInvariant() });
+            problem.Title = title;
+        }
+        if (description != null)
+        {
+            problem.Description = description;
+        }
+        if (inputFormat != null)
+        {
+            problem.InputFormat = inputFormat;
+        }
+        if (outputFormat != null)
+        {
+            problem.OutputFormat = outputFormat;
+        }
+        if (constraints != null)
+        {
+            problem.Constraints = constraints;
+        }
+        if (difficulty.HasValue)
+        {
+            problem.Difficulty = difficulty.Value;
+        }
+        if (timeLimit.HasValue)
+        {
+            problem.TimeLimit = timeLimit.Value;
+        }
+        if (memoryLimit.HasValue)
+        {
+            problem.MemoryLimit = memoryLimit.Value;
+        }
+        if (visibility.HasValue)
+        {
+            problem.Visibility = visibility.Value;
+        }
+        if (hintText != null)
+        {
+            problem.HintText = hintText;
         }
 
-        await _problemRepository.UpdateAsync(problem);
+        if (tags != null)
+        {
+            problem.Tags.Clear();
+            foreach (var tag in tags)
+            {
+                problem.Tags.Add(new ProblemTag
+                {
+                    Tag = tag.Trim().ToLowerInvariant(),
+                    ProblemId = problemId
+                });
+            }
+        }
 
-        _logger.LogInformation("Problem updated: {ProblemId} - {Title} by user {UserId}",
+        problem.UpdatedAt = DateTime.UtcNow;
+
+        await problemRepository.UpdateAsync(problem);
+
+        logger.LogInformation("Problem updated: {ProblemId} - {Title} by user {UserId}",
             problem.Id, problem.Title, userId);
 
-        await _eventPublisher.PublishProblemUpdatedAsync(
+        await eventPublisher.PublishProblemUpdatedAsync(
             problem.Id,
             problem.Title,
             userId,
@@ -181,10 +214,10 @@ public class ProblemService : IProblemService
 
     public async Task DeleteProblemAsync(long id, long userId, CancellationToken cancellationToken = default)
     {
-        var problem = await _problemRepository.GetByIdAsync(id);
+        var problem = await problemRepository.GetByIdAsync(id);
         if (problem == null)
         {
-            throw new InvalidOperationException($"Problem with ID {id} not found");
+            throw new KeyNotFoundException($"Problem with ID {id} not found");
         }
 
         if (problem.AuthorId != userId)
@@ -192,11 +225,11 @@ public class ProblemService : IProblemService
             throw new UnauthorizedAccessException("Only the author can delete this problem");
         }
 
-        await _problemRepository.DeleteAsync(id);
+        await problemRepository.DeleteAsync(id);
 
-        _logger.LogInformation("Problem deleted: {ProblemId} by user {UserId}", id, userId);
+        logger.LogInformation("Problem deleted: {ProblemId} by user {UserId}", id, userId);
 
-        await _eventPublisher.PublishProblemDeletedAsync(
+        await eventPublisher.PublishProblemDeletedAsync(
             problem.Id,
             problem.Title,
             userId,
@@ -205,7 +238,7 @@ public class ProblemService : IProblemService
 
     public async Task IncrementViewCountAsync(long id, CancellationToken cancellationToken = default)
     {
-        await _problemRepository.IncrementViewCountAsync(id);
+        await problemRepository.IncrementViewCountAsync(id);
     }
 
     public async Task UpdateStatisticsAsync(
@@ -214,25 +247,30 @@ public class ProblemService : IProblemService
         int acceptedCount,
         CancellationToken cancellationToken = default)
     {
-        await _problemRepository.UpdateStatisticsAsync(id, submissionCount, acceptedCount);
+        await problemRepository.UpdateStatisticsAsync(id, submissionCount, acceptedCount);
 
-        _logger.LogInformation("Problem statistics updated: {ProblemId} - Submissions: {SubmissionCount}, Accepted: {AcceptedCount}",
+        logger.LogInformation("Problem statistics updated: {ProblemId} - Submissions: {SubmissionCount}, Accepted: {AcceptedCount}",
             id, submissionCount, acceptedCount);
     }
 
     public async Task<IEnumerable<Problem>> GetProblemsByAuthorAsync(long authorId, CancellationToken cancellationToken = default)
     {
-        return await _problemRepository.GetByAuthorAsync(authorId, 1, int.MaxValue);
+        return await problemRepository.GetByAuthorAsync(authorId, page: 1, int.MaxValue);
+    }
+
+    public async Task<int> GetTotalProblemsCountAsync(CancellationToken cancellationToken = default)
+    {
+        return await problemRepository.GetTotalCountAsync();
     }
 
     public async Task<bool> ProblemExistsAsync(long id, CancellationToken cancellationToken = default)
     {
-        return await _problemRepository.ExistsAsync(id);
+        return await problemRepository.ExistsAsync(id);
     }
 
     public async Task<bool> SlugExistsAsync(string slug, CancellationToken cancellationToken = default)
     {
-        return await _problemRepository.SlugExistsAsync(slug);
+        return await problemRepository.SlugExistsAsync(slug);
     }
 
     public async Task<bool> IsAuthorOrAdminAsync(long problemId, long userId, bool isAdmin, CancellationToken cancellationToken = default)
@@ -242,7 +280,7 @@ public class ProblemService : IProblemService
             return true;
         }
 
-        var problem = await _problemRepository.GetByIdAsync(problemId);
+        var problem = await problemRepository.GetByIdAsync(problemId);
         return problem?.AuthorId == userId;
     }
 
@@ -252,7 +290,7 @@ public class ProblemService : IProblemService
         var slug = baseSlug;
         var counter = 1;
 
-        while (await _problemRepository.SlugExistsAsync(slug))
+        while (await problemRepository.SlugExistsAsync(slug))
         {
             slug = $"{baseSlug}-{counter}";
             counter++;

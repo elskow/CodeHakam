@@ -6,34 +6,38 @@ public interface IDiscussionService
 {
     Task<Discussion?> GetDiscussionAsync(long id, bool includeComments = false, CancellationToken cancellationToken = default);
 
-    Task<(IEnumerable<Discussion> Discussions, int TotalCount)> GetDiscussionsAsync(
-        long? problemId,
-        int page,
-        int pageSize,
-        CancellationToken cancellationToken = default);
+    Task<IEnumerable<Discussion>> GetDiscussionsAsync(int page, int pageSize, CancellationToken cancellationToken = default);
+
+    Task<IEnumerable<Discussion>> GetDiscussionsByProblemAsync(long problemId, int page, int pageSize, CancellationToken cancellationToken = default);
+
+    Task<int> GetTotalDiscussionsCountAsync(CancellationToken cancellationToken = default);
+
+    Task<int> GetProblemDiscussionsCountAsync(long problemId, CancellationToken cancellationToken = default);
 
     Task<Discussion> CreateDiscussionAsync(
         long problemId,
+        long userId,
         string title,
         string content,
-        long authorId,
         CancellationToken cancellationToken = default);
 
     Task<Discussion> UpdateDiscussionAsync(
-        long id,
+        long discussionId,
+        long userId,
         string title,
         string content,
-        long userId,
         CancellationToken cancellationToken = default);
 
     Task DeleteDiscussionAsync(long id, long userId, CancellationToken cancellationToken = default);
 
     Task<DiscussionComment> AddCommentAsync(
         long discussionId,
+        long userId,
         string content,
-        long authorId,
-        long? parentCommentId = null,
+        long? parentId = null,
         CancellationToken cancellationToken = default);
+
+    Task<DiscussionComment?> GetCommentAsync(long commentId, CancellationToken cancellationToken = default);
 
     Task<DiscussionComment> UpdateCommentAsync(
         long commentId,

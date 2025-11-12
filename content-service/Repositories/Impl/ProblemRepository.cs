@@ -6,18 +6,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ContentService.Repositories.Impl;
 
-public class ProblemRepository : IProblemRepository
+public class ProblemRepository(ContentDbContext context) : IProblemRepository
 {
-    private readonly ContentDbContext _context;
-
-    public ProblemRepository(ContentDbContext context)
-    {
-        _context = context;
-    }
-
     public async Task<Problem?> GetByIdAsync(long id, bool includeRelated = false)
     {
-        var query = _context.Problems.AsQueryable();
+        var query = context.Problems.AsQueryable();
 
         if (includeRelated)
         {
@@ -32,7 +25,7 @@ public class ProblemRepository : IProblemRepository
 
     public async Task<Problem?> GetBySlugAsync(string slug, bool includeRelated = false)
     {
-        var query = _context.Problems.AsQueryable();
+        var query = context.Problems.AsQueryable();
 
         if (includeRelated)
         {
@@ -47,7 +40,7 @@ public class ProblemRepository : IProblemRepository
 
     public async Task<IEnumerable<Problem>> GetAllAsync(int page, int pageSize)
     {
-        return await _context.Problems
+        return await context.Problems
             .AsNoTracking()
             .Where(p => p.IsActive && p.Visibility == ProblemVisibility.Public)
             .OrderByDescending(p => p.CreatedAt)
@@ -64,18 +57,11 @@ public class ProblemRepository : IProblemRepository
         int page,
         int pageSize)
     {
-        var query = _context.Problems
+        var query = context.Problems
             .AsNoTracking()
             .Where(p => p.IsActive);
 
-        if (visibility.HasValue)
-        {
-            query = query.Where(p => p.Visibility == visibility.Value);
-        }
-        else
-        {
-            query = query.Where(p => p.Visibility == ProblemVisibility.Public);
-        }
+        query = visibility.HasValue ? query.Where(p => p.Visibility == visibility.Value) : query.Where(p => p.Visibility == ProblemVisibility.Public);
 
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
@@ -105,7 +91,7 @@ public class ProblemRepository : IProblemRepository
 
     public async Task<int> GetTotalCountAsync()
     {
-        return await _context.Problems
+        return await context.Problems
             .AsNoTracking()
             .CountAsync(p => p.IsActive && p.Visibility == ProblemVisibility.Public);
     }
@@ -116,18 +102,11 @@ public class ProblemRepository : IProblemRepository
         string? tag,
         ProblemVisibility? visibility)
     {
-        var query = _context.Problems
+        var query = context.Problems
             .AsNoTracking()
             .Where(p => p.IsActive);
 
-        if (visibility.HasValue)
-        {
-            query = query.Where(p => p.Visibility == visibility.Value);
-        }
-        else
-        {
-            query = query.Where(p => p.Visibility == ProblemVisibility.Public);
-        }
+        query = visibility.HasValue ? query.Where(p => p.Visibility == visibility.Value) : query.Where(p => p.Visibility == ProblemVisibility.Public);
 
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
@@ -152,22 +131,22 @@ public class ProblemRepository : IProblemRepository
 
     public async Task<Problem> CreateAsync(Problem problem)
     {
-        await _context.Problems.AddAsync(problem);
-        await _context.SaveChangesAsync();
+        await context.Problems.AddAsync(problem);
+        await context.SaveChangesAsync();
         return problem;
     }
 
     public async Task<Problem> UpdateAsync(Problem problem)
     {
         problem.UpdatedAt = DateTime.UtcNow;
-        _context.Problems.Update(problem);
-        await _context.SaveChangesAsync();
+        context.Problems.Update(problem);
+        await context.SaveChangesAsync();
         return problem;
     }
 
     public async Task<bool> DeleteAsync(long id)
     {
-        var problem = await _context.Problems.FindAsync(id);
+        var problem = await context.Problems.FindAsync(id);
         if (problem == null)
         {
             return false;
@@ -175,27 +154,27 @@ public class ProblemRepository : IProblemRepository
 
         problem.IsActive = false;
         problem.UpdatedAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
+        await context.SaveChangesAsync();
         return true;
     }
 
     public async Task<bool> ExistsAsync(long id)
     {
-        return await _context.Problems
+        return await context.Problems
             .AsNoTracking()
             .AnyAsync(p => p.Id == id && p.IsActive);
     }
 
     public async Task<bool> SlugExistsAsync(string slug)
     {
-        return await _context.Problems
+        return await context.Problems
             .AsNoTracking()
             .AnyAsync(p => p.Slug == slug);
     }
 
     public async Task<IEnumerable<Problem>> GetByAuthorAsync(long authorId, int page, int pageSize)
     {
-        return await _context.Problems
+        return await context.Problems
             .AsNoTracking()
             .Where(p => p.AuthorId == authorId && p.IsActive)
             .OrderByDescending(p => p.CreatedAt)
@@ -206,32 +185,32 @@ public class ProblemRepository : IProblemRepository
 
     public async Task IncrementViewCountAsync(long id)
     {
-        var problem = await _context.Problems.FindAsync(id);
+        var problem = await context.Problems.FindAsync(id);
         if (problem != null)
         {
             problem.ViewCount++;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
         }
     }
 
     public async Task UpdateStatisticsAsync(long id, int submissionCount, int acceptedCount)
     {
-        var problem = await _context.Problems.FindAsync(id);
+        var problem = await context.Problems.FindAsync(id);
         if (problem != null)
         {
             problem.SubmissionCount = submissionCount;
             problem.AcceptedCount = acceptedCount;
             problem.AcceptanceRate = submissionCount > 0
-                ? Math.Round((decimal)acceptedCount / submissionCount * 100, 2)
+                ? Math.Round((decimal)acceptedCount / submissionCount * 100, decimals: 2)
                 : 0;
             problem.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+            await context.SaveChangesAsync();
         }
     }
 
     public async Task<IEnumerable<string>> GetAllTagsAsync()
     {
-        return await _context.ProblemTags
+        return await context.ProblemTags
             .AsNoTracking()
             .Select(pt => pt.Tag)
             .Distinct()

@@ -1,23 +1,21 @@
-namespace ContentService.Services.Implementations;
-
 using System.Text;
 using System.Text.Json;
 using ContentService.Services.Interfaces;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 
-public class RabbitMQEventPublisher : IEventPublisher, IDisposable
+namespace ContentService.Services.Implementations;
+
+public class RabbitMqEventPublisher : IEventPublisher, IDisposable
 {
-    private readonly IConnection _connection;
     private readonly IModel _channel;
-    private readonly ILogger<RabbitMQEventPublisher> _logger;
+    private readonly IConnection _connection;
     private readonly string _exchangeName;
+    private readonly ILogger<RabbitMqEventPublisher> _logger;
     private bool _disposed;
 
-    public RabbitMQEventPublisher(
+    public RabbitMqEventPublisher(
         IConfiguration configuration,
-        ILogger<RabbitMQEventPublisher> logger)
+        ILogger<RabbitMqEventPublisher> logger)
     {
         _logger = logger;
 
@@ -41,12 +39,28 @@ public class RabbitMQEventPublisher : IEventPublisher, IDisposable
         _channel = _connection.CreateModel();
 
         _channel.ExchangeDeclare(
-            exchange: _exchangeName,
-            type: ExchangeType.Topic,
+            _exchangeName,
+            ExchangeType.Topic,
             durable: true,
             autoDelete: false);
 
         _logger.LogInformation("RabbitMQ connection established to {Host}:{Port}", host, port);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _channel.Close();
+        _channel.Dispose();
+        _connection.Close();
+        _connection.Dispose();
+
+        _disposed = true;
+        _logger.LogInformation("RabbitMQ connection closed");
     }
 
     public async Task PublishAsync<T>(string routingKey, T message, CancellationToken cancellationToken = default) where T : class
@@ -64,10 +78,10 @@ public class RabbitMQEventPublisher : IEventPublisher, IDisposable
         properties.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
 
         _channel.BasicPublish(
-            exchange: _exchangeName,
-            routingKey: routingKey,
-            basicProperties: properties,
-            body: body);
+            _exchangeName,
+            routingKey,
+            properties,
+            body);
 
         _logger.LogInformation("Published event to {RoutingKey}: {MessageType}", routingKey, typeof(T).Name);
 
@@ -114,17 +128,31 @@ public class RabbitMQEventPublisher : IEventPublisher, IDisposable
         return PublishAsync("problem.deleted", message, cancellationToken);
     }
 
-    public Task PublishTestCaseUploadedAsync(long problemId, long testCaseId, bool isSample, CancellationToken cancellationToken = default)
+    public Task PublishTestCaseUploadedAsync(long testCaseId, long problemId, int testNumber, bool isSample, CancellationToken cancellationToken = default)
     {
         var message = new
         {
-            ProblemId = problemId,
             TestCaseId = testCaseId,
+            ProblemId = problemId,
+            TestNumber = testNumber,
             IsSample = isSample,
             Timestamp = DateTime.UtcNow
         };
 
         return PublishAsync("testcase.uploaded", message, cancellationToken);
+    }
+
+    public Task PublishTestCaseDeletedAsync(long testCaseId, long problemId, int testNumber, CancellationToken cancellationToken = default)
+    {
+        var message = new
+        {
+            TestCaseId = testCaseId,
+            ProblemId = problemId,
+            TestNumber = testNumber,
+            Timestamp = DateTime.UtcNow
+        };
+
+        return PublishAsync("testcase.deleted", message, cancellationToken);
     }
 
     public Task PublishEditorialPublishedAsync(long problemId, long editorialId, long authorId, CancellationToken cancellationToken = default)
@@ -152,18 +180,5 @@ public class RabbitMQEventPublisher : IEventPublisher, IDisposable
         };
 
         return PublishAsync("discussion.created", message, cancellationToken);
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-
-        _channel?.Close();
-        _channel?.Dispose();
-        _connection?.Close();
-        _connection?.Dispose();
-
-        _disposed = true;
-        _logger.LogInformation("RabbitMQ connection closed");
     }
 }
