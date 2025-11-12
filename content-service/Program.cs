@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using ContentService.Configuration;
 using ContentService.Data;
 using ContentService.Repositories.Impl;
@@ -9,10 +10,13 @@ using ContentService.Validators;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Minio;
 using Serilog;
+using System.Text.Json;
 
 namespace ContentService;
 
@@ -37,6 +41,17 @@ public class Program
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddOpenApi();
 
+        // Add Swagger/OpenAPI
+        builder.Services.AddSwaggerGen(c =>
+        {
+            c.SwaggerDoc("v1", new()
+            {
+                Title = "CodeHakam Content Service API",
+                Version = "v1",
+                Description = "Content Service API for managing problems, test cases, editorials, discussions, and problem lists"
+            });
+        });
+
         // Configure FluentValidation
         builder.Services.AddFluentValidationAutoValidation();
         builder.Services.AddValidatorsFromAssemblyContaining<CreateProblemRequestValidator>();
@@ -48,6 +63,14 @@ public class Program
         // Configure Database Context
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ??
                                throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+
+        // Add Health Checks
+        builder.Services.AddHealthChecks()
+            .AddNpgSql(
+                connectionString,
+                name: "postgres",
+                failureStatus: HealthStatus.Unhealthy,
+                tags: new[] { "db", "sql", "postgres" });
 
         builder.Services.AddDbContext<ContentDbContext>(options =>
             options.UseNpgsql(connectionString));
@@ -131,6 +154,12 @@ public class Program
         if (app.Environment.IsDevelopment())
         {
             app.MapOpenApi();
+            app.UseSwagger();
+            app.UseSwaggerUI(c =>
+            {
+                c.SwaggerEndpoint("/swagger/v1/swagger.json", "Content Service API v1");
+                c.RoutePrefix = "swagger";
+            });
             app.UseDeveloperExceptionPage();
         }
         else
@@ -144,6 +173,39 @@ public class Program
         app.UseCors("AllowAll");
         app.UseAuthentication();
         app.UseAuthorization();
+
+        // Map health check endpoints
+        app.MapHealthChecks("/health", new HealthCheckOptions
+        {
+            ResponseWriter = async (context, report) =>
+            {
+                context.Response.ContentType = "application/json";
+                var result = JsonSerializer.Serialize(new
+                {
+                    status = report.Status.ToString(),
+                    checks = report.Entries.Select(e => new
+                    {
+                        name = e.Key,
+                        status = e.Value.Status.ToString(),
+                        description = e.Value.Description,
+                        duration = e.Value.Duration.TotalMilliseconds
+                    }),
+                    totalDuration = report.TotalDuration.TotalMilliseconds
+                });
+                await context.Response.WriteAsync(result);
+            }
+        });
+
+        app.MapHealthChecks("/health/ready", new HealthCheckOptions
+        {
+            Predicate = check => check.Tags.Contains("db")
+        });
+
+        app.MapHealthChecks("/health/live", new HealthCheckOptions
+        {
+            Predicate = _ => false
+        });
+
         app.MapControllers();
 
         // Ensure MinIO bucket exists at startup
