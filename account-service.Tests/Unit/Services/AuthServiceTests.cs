@@ -55,6 +55,7 @@ public class AuthServiceTests : IDisposable
     public async Task LogoutAsync_WithValidToken_ShouldRevokeTokenAndReturnSuccess()
     {
         var user = TestDataBuilder.CreateTestUser();
+        var rawToken = "raw_refresh_token";
         var tokenHash = "valid_token_hash_12345";
         var refreshToken = TestDataBuilder.CreateRefreshToken(
             userId: user.Id,
@@ -65,7 +66,11 @@ public class AuthServiceTests : IDisposable
         await _context.RefreshTokens.AddAsync(refreshToken);
         await _context.SaveChangesAsync();
 
-        var (success, error) = await _authService.LogoutAsync(user.Id, tokenHash, "127.0.0.1");
+        _tokenServiceMock
+            .Setup(x => x.HashToken(rawToken))
+            .Returns(tokenHash);
+
+        var (success, error) = await _authService.LogoutAsync(user.Id, rawToken, "127.0.0.1");
 
         success.Should().BeTrue();
         error.Should().BeNull();
@@ -83,7 +88,14 @@ public class AuthServiceTests : IDisposable
         await _context.Users.AddAsync(user);
         await _context.SaveChangesAsync();
 
-        var (success, error) = await _authService.LogoutAsync(user.Id, "non_existent_token", "127.0.0.1");
+        var rawToken = "non_existent_token";
+        var hashedToken = "hashed_non_existent";
+
+        _tokenServiceMock
+            .Setup(x => x.HashToken(rawToken))
+            .Returns(hashedToken);
+
+        var (success, error) = await _authService.LogoutAsync(user.Id, rawToken, "127.0.0.1");
 
         success.Should().BeFalse();
         error.Should().NotBeNullOrEmpty();
@@ -93,6 +105,7 @@ public class AuthServiceTests : IDisposable
     public async Task LogoutAsync_WithAlreadyRevokedToken_ShouldReturnUnauthorized()
     {
         var user = TestDataBuilder.CreateTestUser();
+        var rawToken = "revoked_token";
         var tokenHash = "revoked_token_hash";
         var refreshToken = TestDataBuilder.CreateRefreshToken(
             userId: user.Id,
@@ -104,7 +117,11 @@ public class AuthServiceTests : IDisposable
         await _context.RefreshTokens.AddAsync(refreshToken);
         await _context.SaveChangesAsync();
 
-        var (success, error) = await _authService.LogoutAsync(user.Id, tokenHash, "127.0.0.1");
+        _tokenServiceMock
+            .Setup(x => x.HashToken(rawToken))
+            .Returns(tokenHash);
+
+        var (success, error) = await _authService.LogoutAsync(user.Id, rawToken, "127.0.0.1");
 
         success.Should().BeFalse();
         error.Should().Contain("revoked");
@@ -114,6 +131,7 @@ public class AuthServiceTests : IDisposable
     public async Task LogoutAsync_WithExpiredToken_ShouldReturnUnauthorized()
     {
         var user = TestDataBuilder.CreateTestUser();
+        var rawToken = "expired_token";
         var tokenHash = "expired_token_hash";
         var refreshToken = TestDataBuilder.CreateRefreshToken(
             userId: user.Id,
@@ -124,7 +142,11 @@ public class AuthServiceTests : IDisposable
         await _context.RefreshTokens.AddAsync(refreshToken);
         await _context.SaveChangesAsync();
 
-        var (success, error) = await _authService.LogoutAsync(user.Id, tokenHash, "127.0.0.1");
+        _tokenServiceMock
+            .Setup(x => x.HashToken(rawToken))
+            .Returns(tokenHash);
+
+        var (success, error) = await _authService.LogoutAsync(user.Id, rawToken, "127.0.0.1");
 
         success.Should().BeFalse();
         error.Should().NotBeNullOrEmpty();
@@ -137,6 +159,7 @@ public class AuthServiceTests : IDisposable
         var user2 = TestDataBuilder.CreateTestUser(username: "user2", email: "user2@example.com");
         user2.Id = 2;
 
+        var rawToken = "user2_token";
         var tokenHash = "user2_token_hash";
         var refreshToken = TestDataBuilder.CreateRefreshToken(
             userId: user2.Id,
@@ -147,7 +170,11 @@ public class AuthServiceTests : IDisposable
         await _context.RefreshTokens.AddAsync(refreshToken);
         await _context.SaveChangesAsync();
 
-        var (success, error) = await _authService.LogoutAsync(user1.Id, tokenHash, "127.0.0.1");
+        _tokenServiceMock
+            .Setup(x => x.HashToken(rawToken))
+            .Returns(tokenHash);
+
+        var (success, error) = await _authService.LogoutAsync(user1.Id, rawToken, "127.0.0.1");
 
         success.Should().BeFalse();
         error.Should().NotBeNullOrEmpty();
@@ -157,6 +184,7 @@ public class AuthServiceTests : IDisposable
     public async Task RefreshTokenAsync_WithValidToken_ShouldReturnNewTokens()
     {
         var user = TestDataBuilder.CreateTestUser();
+        var oldRawToken = "old_refresh_token";
         var oldTokenHash = "old_token_hash";
         var oldRefreshToken = TestDataBuilder.CreateRefreshToken(
             userId: user.Id,
@@ -172,6 +200,10 @@ public class AuthServiceTests : IDisposable
         var newRefreshTokenHash = "new_refresh_token_hash";
 
         _tokenServiceMock
+            .Setup(x => x.HashToken(oldRawToken))
+            .Returns(oldTokenHash);
+
+        _tokenServiceMock
             .Setup(x => x.GenerateAccessTokenAsync(user, It.IsAny<IEnumerable<string>>()))
             .ReturnsAsync(newAccessToken);
 
@@ -183,7 +215,7 @@ public class AuthServiceTests : IDisposable
             .Setup(x => x.HashToken(newRefreshTokenValue))
             .Returns(newRefreshTokenHash);
 
-        var request = new RefreshTokenRequest { RefreshToken = oldTokenHash };
+        var request = new RefreshTokenRequest { RefreshToken = oldRawToken };
 
         var (success, response, error) = await _authService.RefreshTokenAsync(request, "127.0.0.1");
 
@@ -213,7 +245,14 @@ public class AuthServiceTests : IDisposable
         await _context.Users.AddAsync(user);
         await _context.SaveChangesAsync();
 
-        var request = new RefreshTokenRequest { RefreshToken = "non_existent_token" };
+        var rawToken = "non_existent_token";
+        var hashedToken = "hashed_non_existent";
+
+        _tokenServiceMock
+            .Setup(x => x.HashToken(rawToken))
+            .Returns(hashedToken);
+
+        var request = new RefreshTokenRequest { RefreshToken = rawToken };
 
         var (success, response, error) = await _authService.RefreshTokenAsync(request, "127.0.0.1");
 
@@ -226,7 +265,8 @@ public class AuthServiceTests : IDisposable
     public async Task RefreshTokenAsync_WithRevokedToken_ShouldReturnUnauthorized()
     {
         var user = TestDataBuilder.CreateTestUser();
-        var tokenHash = "revoked_token";
+        var rawToken = "revoked_token";
+        var tokenHash = "revoked_token_hash";
         var refreshToken = TestDataBuilder.CreateRefreshToken(
             userId: user.Id,
             tokenHash: tokenHash,
@@ -237,7 +277,11 @@ public class AuthServiceTests : IDisposable
         await _context.RefreshTokens.AddAsync(refreshToken);
         await _context.SaveChangesAsync();
 
-        var request = new RefreshTokenRequest { RefreshToken = tokenHash };
+        _tokenServiceMock
+            .Setup(x => x.HashToken(rawToken))
+            .Returns(tokenHash);
+
+        var request = new RefreshTokenRequest { RefreshToken = rawToken };
 
         var (success, response, error) = await _authService.RefreshTokenAsync(request, "127.0.0.1");
 
@@ -250,7 +294,8 @@ public class AuthServiceTests : IDisposable
     public async Task RefreshTokenAsync_WithExpiredToken_ShouldReturnUnauthorized()
     {
         var user = TestDataBuilder.CreateTestUser();
-        var tokenHash = "expired_token";
+        var rawToken = "expired_token";
+        var tokenHash = "expired_token_hash";
         var refreshToken = TestDataBuilder.CreateRefreshToken(
             userId: user.Id,
             tokenHash: tokenHash,
@@ -260,7 +305,11 @@ public class AuthServiceTests : IDisposable
         await _context.RefreshTokens.AddAsync(refreshToken);
         await _context.SaveChangesAsync();
 
-        var request = new RefreshTokenRequest { RefreshToken = tokenHash };
+        _tokenServiceMock
+            .Setup(x => x.HashToken(rawToken))
+            .Returns(tokenHash);
+
+        var request = new RefreshTokenRequest { RefreshToken = rawToken };
 
         var (success, response, error) = await _authService.RefreshTokenAsync(request, "127.0.0.1");
 
@@ -316,9 +365,10 @@ public class AuthServiceTests : IDisposable
             .Setup(x => x.FindByIdAsync(user.Id.ToString()))
             .ReturnsAsync(user);
 
+        var identityError = new IdentityError { Description = "Incorrect password" };
         _userManagerMock
-            .Setup(x => x.CheckPasswordAsync(user, "WrongPassword123!"))
-            .ReturnsAsync(false);
+            .Setup(x => x.ChangePasswordAsync(user, "WrongPassword123!", "NewPassword123!"))
+            .ReturnsAsync(IdentityResult.Failed(identityError));
 
         var request = new ChangePasswordRequest
         {
@@ -330,11 +380,11 @@ public class AuthServiceTests : IDisposable
         var (success, error) = await _authService.ChangePasswordAsync(user.Id, request);
 
         success.Should().BeFalse();
-        error.Should().Be("Current password is incorrect");
+        error.Should().Contain("password");
 
         _userManagerMock.Verify(
-            x => x.ChangePasswordAsync(It.IsAny<User>(), It.IsAny<string>(), It.IsAny<string>()),
-            Times.Never);
+            x => x.ChangePasswordAsync(user, "WrongPassword123!", "NewPassword123!"),
+            Times.Once);
     }
 
     [Fact]
