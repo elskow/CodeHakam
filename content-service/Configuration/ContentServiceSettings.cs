@@ -6,7 +6,7 @@ public class ContentServiceSettings
     public int MaxProblemDescriptionLength { get; set; }
     public int DefaultPageSize { get; set; }
     public int MaxPageSize { get; set; }
-    public string[] SupportedImageFormats { get; set; } = Array.Empty<string>();
+    public string[] SupportedImageFormats { get; set; } = [];
     public long MaxImageSize { get; set; }
 }
 
