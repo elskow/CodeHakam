@@ -24,6 +24,12 @@ public interface IProblemService
         int pageSize,
         CancellationToken cancellationToken = default);
 
+    Task<int> GetSearchCountAsync(
+        string? searchTerm,
+        Difficulty? difficulty,
+        List<string>? tags,
+        CancellationToken cancellationToken = default);
+
     Task<Problem> CreateProblemAsync(
         string title,
         string description,

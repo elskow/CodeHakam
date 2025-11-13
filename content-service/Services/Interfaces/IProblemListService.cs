@@ -1,6 +1,6 @@
-namespace ContentService.Services.Interfaces;
-
 using ContentService.Models;
+
+namespace ContentService.Services.Interfaces;
 
 public interface IProblemListService
 {

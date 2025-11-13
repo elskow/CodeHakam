@@ -7,9 +7,6 @@ public class AddCommentRequestValidator : AbstractValidator<AddCommentRequest>
 {
     public AddCommentRequestValidator()
     {
-        RuleFor(x => x.DiscussionId)
-            .GreaterThan(0).WithMessage("Discussion ID must be greater than 0.");
-
         RuleFor(x => x.Content)
             .NotEmpty().WithMessage("Content is required.")
             .MinimumLength(1).WithMessage("Content must be at least 1 character.")

@@ -4,7 +4,7 @@ using ContentService.Services.Interfaces;
 
 namespace ContentService.Services.Implementations;
 
-public class ProblemListService(
+public sealed class ProblemListService(
     IProblemListRepository problemListRepository,
     IProblemRepository problemRepository,
     ILogger<ProblemListService> logger)

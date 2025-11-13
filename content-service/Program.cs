@@ -1,11 +1,12 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using ContentService.Configuration;
 using ContentService.Data;
 using ContentService.Middleware;
-using ContentService.Repositories.Impl;
+using ContentService.Repositories.Implementations;
 using ContentService.Repositories.Interfaces;
 using ContentService.Services.BackgroundServices;
 using ContentService.Services.Implementations;
@@ -25,7 +26,7 @@ using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace ContentService;
 
-public class Program
+public abstract class Program
 {
     public static void Main(string[] args)
     {
@@ -42,14 +43,20 @@ public class Program
         builder.Host.UseSerilog();
 
         // Add services to the container
-        builder.Services.AddControllers();
+        builder.Services.AddControllers()
+            .ConfigureApiBehaviorOptions(options => { options.SuppressModelStateInvalidFilter = true; })
+            .AddJsonOptions(options =>
+            {
+                options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+                options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+            });
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddOpenApi();
 
         // Add Swagger/OpenAPI
         builder.Services.AddSwaggerGen(c =>
         {
-            c.SwaggerDoc("v1", new()
+            c.SwaggerDoc("v1", new OpenApiInfo
             {
                 Title = "CodeHakam Content Service API",
                 Version = "v1",
@@ -86,14 +93,14 @@ public class Program
         var minioEndpoint = builder.Configuration["MinIO:Endpoint"] ?? "localhost:9000";
         var minioAccessKey = builder.Configuration["MinIO:AccessKey"] ?? "minioadmin";
         var minioSecretKey = builder.Configuration["MinIO:SecretKey"] ?? "minioadmin";
-        var minioUseSSL = bool.Parse(builder.Configuration["MinIO:UseSSL"] ?? "false");
+        var minioUseSsl = bool.Parse(builder.Configuration["MinIO:UseSSL"] ?? "false");
 
         builder.Services.AddSingleton<IMinioClient>(sp =>
         {
             return new MinioClient()
                 .WithEndpoint(minioEndpoint)
                 .WithCredentials(minioAccessKey, minioSecretKey)
-                .WithSSL(minioUseSSL)
+                .WithSSL(minioUseSsl)
                 .Build();
         });
 
@@ -282,7 +289,7 @@ public class Program
         }
     }
 
-    public class LowercaseDocumentFilter : IDocumentFilter
+    private class LowercaseDocumentFilter : IDocumentFilter
     {
         public void Apply(OpenApiDocument swaggerDoc, DocumentFilterContext context)
         {

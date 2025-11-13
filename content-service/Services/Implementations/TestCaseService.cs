@@ -4,7 +4,7 @@ using ContentService.Services.Interfaces;
 
 namespace ContentService.Services.Implementations;
 
-public class TestCaseService(
+public sealed class TestCaseService(
     ITestCaseRepository testCaseRepository,
     IProblemRepository problemRepository,
     IStorageService storageService,
@@ -57,10 +57,7 @@ public class TestCaseService(
             throw new KeyNotFoundException($"Problem with ID {problemId} not found");
         }
 
-        if (problem.AuthorId != userId)
-        {
-            throw new UnauthorizedAccessException("Only the problem author can upload test cases");
-        }
+
 
         // Validate file sizes
         if (!await ValidateTestCaseSizeAsync(inputFile.Length, cancellationToken))
@@ -170,10 +167,7 @@ public class TestCaseService(
             throw new KeyNotFoundException($"Problem with ID {testCase.ProblemId} not found");
         }
 
-        if (problem.AuthorId != userId)
-        {
-            throw new UnauthorizedAccessException("Only the problem author can delete test cases");
-        }
+
 
         // Delete files from storage
         try

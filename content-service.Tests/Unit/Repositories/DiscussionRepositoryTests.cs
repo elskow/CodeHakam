@@ -1,5 +1,5 @@
 using ContentService.Data;
-using ContentService.Repositories.Impl;
+using ContentService.Repositories.Implementations;
 using ContentService.Tests.Helpers;
 using FluentAssertions;
 
@@ -14,6 +14,12 @@ public class DiscussionRepositoryTests : IDisposable
     {
         _context = TestDbContextFactory.CreateInMemoryContext($"DiscussionRepositoryTests_{Guid.NewGuid()}");
         _repository = new DiscussionRepository(_context);
+    }
+
+    public void Dispose()
+    {
+        _context.Database.EnsureDeleted();
+        _context.Dispose();
     }
 
     [Fact]
@@ -105,7 +111,7 @@ public class DiscussionRepositoryTests : IDisposable
         await _context.Problems.AddAsync(problem);
         await _context.SaveChangesAsync();
 
-        for (int i = 1; i <= 5; i++)
+        for (var i = 1; i <= 5; i++)
         {
             var discussion = TestDataBuilder.CreateDiscussion(problemId: problem.Id, title: $"Discussion {i}");
             await _context.Discussions.AddAsync(discussion);
@@ -136,7 +142,7 @@ public class DiscussionRepositoryTests : IDisposable
     [Fact]
     public async Task GetAllAsync_WithPagination_ShouldReturnCorrectPage()
     {
-        for (int i = 1; i <= 5; i++)
+        for (var i = 1; i <= 5; i++)
         {
             var discussion = TestDataBuilder.CreateDiscussion(title: $"Discussion {i}");
             await _context.Discussions.AddAsync(discussion);
@@ -558,11 +564,5 @@ public class DiscussionRepositoryTests : IDisposable
 
         var updatedComment = await _context.DiscussionComments.FindAsync(comment.Id);
         updatedComment!.VoteCount.Should().Be(7);
-    }
-
-    public void Dispose()
-    {
-        _context.Database.EnsureDeleted();
-        _context.Dispose();
     }
 }

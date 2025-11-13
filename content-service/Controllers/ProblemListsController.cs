@@ -1,4 +1,4 @@
-using ContentService.DTOs;
+using ContentService.DTOs.Common;
 using ContentService.DTOs.Requests;
 using ContentService.DTOs.Responses;
 using ContentService.Models;
@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace ContentService.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/problem-lists")]
 public class ProblemListsController(
     IProblemListService problemListService,
     IProblemService problemService,
@@ -153,9 +153,20 @@ public class ProblemListsController(
     [Authorize]
     [ProducesResponseType(typeof(ApiResponse<ProblemListResponse>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> CreateProblemList([FromBody] CreateProblemListRequest request)
     {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "Validation failed",
+                ModelState.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? Array.Empty<string>()
+                )
+            ));
+        }
+
         try
         {
             var userId = GetUserIdFromClaims();
@@ -166,7 +177,7 @@ public class ProblemListsController(
                 var exists = await problemService.ProblemExistsAsync(problemId);
                 if (!exists)
                 {
-                    return BadRequest(new { error = $"Problem with ID {problemId} not found." });
+                    return BadRequest(ApiResponse<object>.ErrorResponse($"Problem with ID {problemId} not found."));
                 }
             }
 
@@ -203,8 +214,20 @@ public class ProblemListsController(
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> UpdateProblemList(long id, [FromBody] CreateProblemListRequest request)
     {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "Validation failed",
+                ModelState.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? Array.Empty<string>()
+                )
+            ));
+        }
+
         try
         {
             var userId = GetUserIdFromClaims();
@@ -212,7 +235,7 @@ public class ProblemListsController(
             var existingList = await problemListService.GetListAsync(id);
             if (existingList == null)
             {
-                return NotFound(new { error = "Problem list not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem list not found."));
             }
 
             // Check authorization
@@ -248,6 +271,7 @@ public class ProblemListsController(
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> DeleteProblemList(long id)
     {
         try
@@ -257,7 +281,7 @@ public class ProblemListsController(
             var list = await problemListService.GetListAsync(id);
             if (list == null)
             {
-                return NotFound(new { error = "Problem list not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem list not found."));
             }
 
             // Check authorization
@@ -287,6 +311,7 @@ public class ProblemListsController(
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> AddProblemToList(long id, long problemId)
     {
         try
@@ -296,7 +321,7 @@ public class ProblemListsController(
             var list = await problemListService.GetListAsync(id);
             if (list == null)
             {
-                return NotFound(new { error = "Problem list not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem list not found."));
             }
 
             // Check authorization
@@ -309,7 +334,7 @@ public class ProblemListsController(
             var problemExists = await problemService.ProblemExistsAsync(problemId);
             if (!problemExists)
             {
-                return NotFound(new { error = "Problem not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
             }
 
             await problemListService.AddProblemToListAsync(id, problemId, userId);
@@ -337,6 +362,7 @@ public class ProblemListsController(
     [ProducesResponseType(typeof(ApiResponse<ProblemListResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> RemoveProblemFromList(long id, long problemId)
     {
         try
@@ -346,7 +372,7 @@ public class ProblemListsController(
             var list = await problemListService.GetListAsync(id);
             if (list == null)
             {
-                return NotFound(new { error = "Problem list not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem list not found."));
             }
 
             // Check authorization

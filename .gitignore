@@ -3,6 +3,7 @@
 PROJECT_PLAN.md
 docs
 Documentation
+.DS_Store
 .tye/*
 .idea/**/workspace.xml
 .idea/**/tasks.xml

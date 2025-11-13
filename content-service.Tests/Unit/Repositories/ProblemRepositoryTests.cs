@@ -1,7 +1,6 @@
 using ContentService.Data;
 using ContentService.Enums;
-using ContentService.Models;
-using ContentService.Repositories.Impl;
+using ContentService.Repositories.Implementations;
 using ContentService.Tests.Helpers;
 using FluentAssertions;
 
@@ -16,6 +15,12 @@ public class ProblemRepositoryTests : IDisposable
     {
         _context = TestDbContextFactory.CreateInMemoryContext($"ProblemRepositoryTests_{Guid.NewGuid()}");
         _repository = new ProblemRepository(_context);
+    }
+
+    public void Dispose()
+    {
+        _context.Database.EnsureDeleted();
+        _context.Dispose();
     }
 
     [Fact]
@@ -102,7 +107,7 @@ public class ProblemRepositoryTests : IDisposable
     [Fact]
     public async Task GetAllAsync_WithPagination_ShouldReturnCorrectPage()
     {
-        for (int i = 1; i <= 5; i++)
+        for (var i = 1; i <= 5; i++)
         {
             var problem = TestDataBuilder.CreateProblem(slug: $"problem-{i}");
             await _context.Problems.AddAsync(problem);
@@ -125,7 +130,7 @@ public class ProblemRepositoryTests : IDisposable
         await _context.Problems.AddRangeAsync(problem1, problem2);
         await _context.SaveChangesAsync();
 
-        var result = await _repository.SearchAsync("Unique", null, null, null, 1, 10);
+        var result = await _repository.SearchAsync("Unique", difficulty: null, tag: null, visibility: null, page: 1, pageSize: 10);
 
         result.Should().HaveCount(1);
         result.First().Title.Should().Contain("Unique");
@@ -140,7 +145,7 @@ public class ProblemRepositoryTests : IDisposable
         await _context.Problems.AddRangeAsync(easyProblem, hardProblem);
         await _context.SaveChangesAsync();
 
-        var result = await _repository.SearchAsync(null, Difficulty.Hard, null, null, 1, 10);
+        var result = await _repository.SearchAsync(searchTerm: null, Difficulty.Hard, tag: null, visibility: null, page: 1, pageSize: 10);
 
         result.Should().HaveCount(1);
         result.First().Difficulty.Should().Be(Difficulty.Hard);
@@ -159,7 +164,7 @@ public class ProblemRepositoryTests : IDisposable
         await _context.ProblemTags.AddAsync(tag);
         await _context.SaveChangesAsync();
 
-        var result = await _repository.SearchAsync(null, null, "dynamic-programming", null, 1, 10);
+        var result = await _repository.SearchAsync(searchTerm: null, difficulty: null, "dynamic-programming", visibility: null, page: 1, pageSize: 10);
 
         result.Should().HaveCount(1);
         result.First().Slug.Should().Be("dp-problem");
@@ -174,7 +179,7 @@ public class ProblemRepositoryTests : IDisposable
         await _context.Problems.AddRangeAsync(publicProblem, privateProblem);
         await _context.SaveChangesAsync();
 
-        var result = await _repository.SearchAsync(null, null, null, ProblemVisibility.Private, 1, 10);
+        var result = await _repository.SearchAsync(searchTerm: null, difficulty: null, tag: null, ProblemVisibility.Private, page: 1, pageSize: 10);
 
         result.Should().HaveCount(1);
         result.First().Visibility.Should().Be(ProblemVisibility.Private);
@@ -205,7 +210,7 @@ public class ProblemRepositoryTests : IDisposable
         await _context.Problems.AddRangeAsync(problem1, problem2, problem3);
         await _context.SaveChangesAsync();
 
-        var count = await _repository.GetSearchCountAsync(null, Difficulty.Easy, null, null);
+        var count = await _repository.GetSearchCountAsync(searchTerm: null, Difficulty.Easy, tag: null, visibility: null);
 
         count.Should().Be(2);
     }
@@ -373,8 +378,8 @@ public class ProblemRepositoryTests : IDisposable
         await _context.SaveChangesAsync();
 
         var tag1 = TestDataBuilder.CreateProblemTag(problem1.Id, "dynamic-programming");
-        var tag2 = TestDataBuilder.CreateProblemTag(problem1.Id, "array");
-        var tag3 = TestDataBuilder.CreateProblemTag(problem2.Id, "array");
+        var tag2 = TestDataBuilder.CreateProblemTag(problem1.Id);
+        var tag3 = TestDataBuilder.CreateProblemTag(problem2.Id);
         await _context.ProblemTags.AddRangeAsync(tag1, tag2, tag3);
         await _context.SaveChangesAsync();
 
@@ -384,11 +389,5 @@ public class ProblemRepositoryTests : IDisposable
         result.Should().Contain("array");
         result.Should().Contain("dynamic-programming");
         result.Should().BeInAscendingOrder();
-    }
-
-    public void Dispose()
-    {
-        _context.Database.EnsureDeleted();
-        _context.Dispose();
     }
 }

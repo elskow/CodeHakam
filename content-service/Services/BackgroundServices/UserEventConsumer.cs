@@ -10,35 +10,26 @@ using RabbitMQ.Client.Events;
 
 namespace ContentService.Services.BackgroundServices;
 
-public class UserEventConsumer : BackgroundService
+public class UserEventConsumer(
+    IServiceProvider serviceProvider,
+    IConfiguration configuration,
+    ILogger<UserEventConsumer> logger)
+    : BackgroundService
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly IConfiguration _configuration;
-    private readonly ILogger<UserEventConsumer> _logger;
-    private IConnection? _connection;
-    private IModel? _channel;
     private const int MaxRetryCount = 5;
+    private IModel? _channel;
+    private IConnection? _connection;
 
-    public UserEventConsumer(
-        IServiceProvider serviceProvider,
-        IConfiguration configuration,
-        ILogger<UserEventConsumer> logger)
-    {
-        _serviceProvider = serviceProvider;
-        _configuration = configuration;
-        _logger = logger;
-    }
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected async override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try
         {
-            var host = _configuration["RabbitMQ:Host"] ?? "localhost";
-            var port = int.Parse(_configuration["RabbitMQ:Port"] ?? "5672");
-            var username = _configuration["RabbitMQ:Username"] ?? "guest";
-            var password = _configuration["RabbitMQ:Password"] ?? "guest";
-            var virtualHost = _configuration["RabbitMQ:VirtualHost"] ?? "/";
-            var exchangeName = _configuration["RabbitMQ:ExchangeName"] ?? "codehakam.events";
+            var host = configuration["RabbitMQ:Host"] ?? "localhost";
+            var port = int.Parse(configuration["RabbitMQ:Port"] ?? "5672");
+            var username = configuration["RabbitMQ:Username"] ?? "guest";
+            var password = configuration["RabbitMQ:Password"] ?? "guest";
+            var virtualHost = configuration["RabbitMQ:VirtualHost"] ?? "/";
+            var exchangeName = configuration["RabbitMQ:ExchangeName"] ?? "codehakam.events";
 
             var factory = new ConnectionFactory
             {
@@ -56,8 +47,8 @@ public class UserEventConsumer : BackgroundService
 
             // Declare exchange (idempotent)
             _channel.ExchangeDeclare(
-                exchange: exchangeName,
-                type: ExchangeType.Topic,
+                exchangeName,
+                ExchangeType.Topic,
                 durable: true,
                 autoDelete: false);
 
@@ -77,30 +68,30 @@ public class UserEventConsumer : BackgroundService
                 { "x-dead-letter-exchange", dlxName }
             };
             _channel.QueueDeclare(
-                queue: queueName,
+                queueName,
                 durable: true,
                 exclusive: false,
                 autoDelete: false,
-                arguments: queueArgs);
+                queueArgs);
 
             // Bind queue to exchange with routing keys
             _channel.QueueBind(
-                queue: queueName,
-                exchange: exchangeName,
-                routingKey: "user.created");
+                queueName,
+                exchangeName,
+                "user.created");
             _channel.QueueBind(
-                queue: queueName,
-                exchange: exchangeName,
-                routingKey: "user.updated");
+                queueName,
+                exchangeName,
+                "user.updated");
             _channel.QueueBind(
-                queue: queueName,
-                exchange: exchangeName,
-                routingKey: "user.deleted");
+                queueName,
+                exchangeName,
+                "user.deleted");
 
             // Set QoS to process one message at a time
             _channel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
 
-            _logger.LogInformation(
+            logger.LogInformation(
                 "UserEventConsumer connected to RabbitMQ at {Host}:{Port}, listening on queue: {QueueName}",
                 host, port, queueName);
 
@@ -113,7 +104,7 @@ public class UserEventConsumer : BackgroundService
 
                 try
                 {
-                    _logger.LogInformation("Received event: {RoutingKey}, Message: {Message}", routingKey, message);
+                    logger.LogInformation("Received event: {RoutingKey}, Message: {Message}", routingKey, message);
 
                     // Deserialize the event envelope (snake_case from account-service)
                     var envelope = JsonSerializer.Deserialize<EventEnvelope>(message, new JsonSerializerOptions
@@ -122,30 +113,30 @@ public class UserEventConsumer : BackgroundService
                         PropertyNameCaseInsensitive = true
                     });
 
-                    _logger.LogInformation("Envelope deserialized: EventType={EventType}, EventId={EventId}, Data={Data}",
+                    logger.LogInformation("Envelope deserialized: EventType={EventType}, EventId={EventId}, Data={Data}",
                         envelope?.EventType, envelope?.EventId, envelope?.Data.ToString());
 
                     if (envelope?.Data == null)
                     {
-                        _logger.LogWarning("Failed to deserialize event envelope for {RoutingKey}", routingKey);
-                        _channel.BasicNack(ea.DeliveryTag, false, false); // Don't requeue - send to DLQ
+                        logger.LogWarning("Failed to deserialize event envelope for {RoutingKey}", routingKey);
+                        _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false); // Don't requeue - send to DLQ
                         return;
                     }
 
-                    _logger.LogInformation("Processing event {EventType} with ID {EventId}",
+                    logger.LogInformation("Processing event {EventType} with ID {EventId}",
                         envelope.EventType, envelope.EventId);
 
                     // Check idempotency
-                    using var scope = _serviceProvider.CreateScope();
+                    using var scope = serviceProvider.CreateScope();
                     var dbContext = scope.ServiceProvider.GetRequiredService<ContentDbContext>();
 
                     var alreadyProcessed = await dbContext.ProcessedEvents
-                        .AnyAsync(pe => pe.EventId == envelope.EventId);
+                        .AnyAsync(pe => pe.EventId == envelope.EventId, stoppingToken);
 
                     if (alreadyProcessed)
                     {
-                        _logger.LogInformation("Event {EventId} already processed, skipping", envelope.EventId);
-                        _channel.BasicAck(ea.DeliveryTag, false);
+                        logger.LogInformation("Event {EventId} already processed, skipping", envelope.EventId);
+                        _channel.BasicAck(ea.DeliveryTag, multiple: false);
                         return;
                     }
 
@@ -158,8 +149,8 @@ public class UserEventConsumer : BackgroundService
 
                     if (userEvent == null)
                     {
-                        _logger.LogWarning("Failed to deserialize user event data for {EventId}", envelope.EventId);
-                        _channel.BasicNack(ea.DeliveryTag, false, false); // Don't requeue - send to DLQ
+                        logger.LogWarning("Failed to deserialize user event data for {EventId}", envelope.EventId);
+                        _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false); // Don't requeue - send to DLQ
                         return;
                     }
 
@@ -180,14 +171,14 @@ public class UserEventConsumer : BackgroundService
                     await dbContext.SaveChangesAsync();
 
                     // Acknowledge successful processing
-                    _channel.BasicAck(ea.DeliveryTag, false);
-                    _logger.LogInformation(
+                    _channel.BasicAck(ea.DeliveryTag, multiple: false);
+                    logger.LogInformation(
                         "Successfully processed event {EventId} in {Duration}ms",
                         envelope.EventId, stopwatch.ElapsedMilliseconds);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error processing event {RoutingKey}", routingKey);
+                    logger.LogError(ex, "Error processing event {RoutingKey}", routingKey);
 
                     // Check retry count from message headers
                     var retryCount = 0;
@@ -206,23 +197,23 @@ public class UserEventConsumer : BackgroundService
 
                     if (retryCount >= MaxRetryCount)
                     {
-                        _logger.LogError("Max retries ({MaxRetries}) exceeded for event, sending to DLQ", MaxRetryCount);
-                        _channel.BasicNack(ea.DeliveryTag, false, false); // Send to DLQ
+                        logger.LogError("Max retries ({MaxRetries}) exceeded for event, sending to DLQ", MaxRetryCount);
+                        _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false); // Send to DLQ
                     }
                     else
                     {
-                        _logger.LogWarning("Requeuing event for retry (attempt {RetryCount})", retryCount + 1);
-                        _channel.BasicNack(ea.DeliveryTag, false, true); // Requeue
+                        logger.LogWarning("Re-queuing event for retry (attempt {RetryCount})", retryCount + 1);
+                        _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: true); // Requeue
                     }
                 }
             };
 
             _channel.BasicConsume(
-                queue: queueName,
+                queueName,
                 autoAck: false,
-                consumer: consumer);
+                consumer);
 
-            _logger.LogInformation("UserEventConsumer is now consuming messages");
+            logger.LogInformation("UserEventConsumer is now consuming messages");
 
             // Keep the service running
             await Task.Delay(Timeout.Infinite, stoppingToken);
@@ -230,11 +221,11 @@ public class UserEventConsumer : BackgroundService
         catch (OperationCanceledException)
         {
             // Expected when the application is shutting down
-            _logger.LogInformation("UserEventConsumer is shutting down");
+            logger.LogInformation("UserEventConsumer is shutting down");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Fatal error in UserEventConsumer");
+            logger.LogError(ex, "Fatal error in UserEventConsumer");
             throw;
         }
     }
@@ -253,7 +244,7 @@ public class UserEventConsumer : BackgroundService
                 break;
 
             default:
-                _logger.LogWarning("Unknown routing key: {RoutingKey}", routingKey);
+                logger.LogWarning("Unknown routing key: {RoutingKey}", routingKey);
                 break;
         }
     }
@@ -276,7 +267,7 @@ public class UserEventConsumer : BackgroundService
             };
 
             dbContext.UserProfiles.Add(newProfile);
-            _logger.LogInformation("Created user profile cache for user {UserId}", userEvent.UserId);
+            logger.LogInformation("Created user profile cache for user {UserId}", userEvent.UserId);
         }
         else
         {
@@ -287,7 +278,7 @@ public class UserEventConsumer : BackgroundService
             existingProfile.AvatarUrl = userEvent.AvatarUrl;
             existingProfile.UpdatedAt = DateTime.UtcNow;
 
-            _logger.LogInformation("Updated user profile cache for user {UserId}", userEvent.UserId);
+            logger.LogInformation("Updated user profile cache for user {UserId}", userEvent.UserId);
         }
 
         await dbContext.SaveChangesAsync();
@@ -300,7 +291,7 @@ public class UserEventConsumer : BackgroundService
         {
             dbContext.UserProfiles.Remove(profile);
             await dbContext.SaveChangesAsync();
-            _logger.LogInformation("Deleted user profile cache for user {UserId}", userId);
+            logger.LogInformation("Deleted user profile cache for user {UserId}", userId);
         }
     }
 

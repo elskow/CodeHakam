@@ -11,6 +11,7 @@ public sealed class Discussion
     public int CommentCount { get; set; }
     public bool IsLocked { get; set; }
     public bool IsPinned { get; set; }
+    public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

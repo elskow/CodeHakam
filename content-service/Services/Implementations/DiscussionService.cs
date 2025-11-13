@@ -4,7 +4,7 @@ using ContentService.Services.Interfaces;
 
 namespace ContentService.Services.Implementations;
 
-public class DiscussionService(
+public sealed class DiscussionService(
     IDiscussionRepository discussionRepository,
     IProblemRepository problemRepository,
     IEventPublisher eventPublisher,
@@ -95,10 +95,7 @@ public class DiscussionService(
             throw new InvalidOperationException($"Discussion with ID {discussionId} not found");
         }
 
-        if (discussion.UserId != userId)
-        {
-            throw new UnauthorizedAccessException("Only the discussion author can update it");
-        }
+
 
         discussion.Title = title;
         discussion.Content = content;
@@ -119,10 +116,7 @@ public class DiscussionService(
             throw new InvalidOperationException($"Discussion with ID {id} not found");
         }
 
-        if (discussion.UserId != userId)
-        {
-            throw new UnauthorizedAccessException("Only the discussion author can delete it");
-        }
+
 
         await discussionRepository.DeleteAsync(id);
 
@@ -194,10 +188,7 @@ public class DiscussionService(
             throw new InvalidOperationException($"Comment with ID {commentId} not found");
         }
 
-        if (comment.UserId != userId)
-        {
-            throw new UnauthorizedAccessException("Only the comment author can update it");
-        }
+
 
         comment.Content = content;
         comment.UpdatedAt = DateTime.UtcNow;
@@ -217,30 +208,70 @@ public class DiscussionService(
             throw new InvalidOperationException($"Comment with ID {commentId} not found");
         }
 
-        if (comment.UserId != userId)
+
+
+        var discussion = await discussionRepository.GetByIdAsync(comment.DiscussionId, includeComments: false);
+        if (discussion == null)
         {
-            throw new UnauthorizedAccessException("Only the comment author can delete it");
+            throw new InvalidOperationException($"Discussion with ID {comment.DiscussionId} not found");
+        }
+
+        if (discussion.CommentCount <= 0)
+        {
+            logger.LogWarning("Attempted to decrement comment count for discussion {DiscussionId} but count is already {Count}",
+                comment.DiscussionId, discussion.CommentCount);
+        }
+        else
+        {
+            await discussionRepository.DecrementCommentCountAsync(comment.DiscussionId);
         }
 
         await discussionRepository.DeleteCommentAsync(commentId);
-        await discussionRepository.DecrementCommentCountAsync(comment.DiscussionId);
 
         logger.LogInformation("Comment deleted: {CommentId} by user {UserId}", commentId, userId);
     }
 
     public async Task VoteDiscussionAsync(long discussionId, bool upvote, long userId, CancellationToken cancellationToken = default)
     {
-        var discussion = await discussionRepository.GetByIdAsync(discussionId, includeComments: false);
-        if (discussion == null)
+        await using var transaction = await discussionRepository.BeginTransactionAsync();
+        try
         {
-            throw new InvalidOperationException($"Discussion with ID {discussionId} not found");
+            var discussion = await discussionRepository.GetByIdAsync(discussionId, includeComments: false);
+            if (discussion == null)
+            {
+                throw new InvalidOperationException($"Discussion with ID {discussionId} not found");
+            }
+
+            var existingVote = await discussionRepository.GetUserVoteAsync(discussionId, userId);
+
+            if (existingVote.HasValue)
+            {
+                if (existingVote.Value == upvote)
+                {
+                    throw new InvalidOperationException($"User {userId} has already voted on discussion {discussionId}");
+                }
+
+                var increment = upvote ? 2 : -2;
+                await discussionRepository.IncrementVoteCountAsync(discussionId, increment);
+                await discussionRepository.UpdateVoteAsync(discussionId, userId, upvote);
+            }
+            else
+            {
+                var increment = upvote ? 1 : -1;
+                await discussionRepository.IncrementVoteCountAsync(discussionId, increment);
+                await discussionRepository.RecordVoteAsync(discussionId, userId, upvote);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+
+            logger.LogInformation("Discussion {DiscussionId} voted by user {UserId}: {VoteType}",
+                discussionId, userId, upvote ? "upvote" : "downvote");
         }
-
-        var increment = upvote ? 1 : -1;
-        await discussionRepository.IncrementVoteCountAsync(discussionId, increment);
-
-        logger.LogInformation("Discussion {DiscussionId} voted by user {UserId}: {VoteType}",
-            discussionId, userId, upvote ? "upvote" : "downvote");
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     public async Task<bool> DiscussionExistsAsync(long id, CancellationToken cancellationToken = default)
@@ -260,21 +291,5 @@ public class DiscussionService(
         return comment?.UserId == userId;
     }
 
-    public async Task<(IEnumerable<Discussion> Discussions, int TotalCount)> GetDiscussionsAsync(
-        long? problemId,
-        int page,
-        int pageSize,
-        CancellationToken cancellationToken = default)
-    {
-        if (problemId.HasValue)
-        {
-            var discussions = await discussionRepository.GetByProblemIdAsync(problemId.Value, page, pageSize);
-            var count = await discussionRepository.GetCountByProblemAsync(problemId.Value);
-            return (discussions, count);
-        }
 
-        var allDiscussions = await discussionRepository.GetAllAsync(page, pageSize);
-        var totalCount = await discussionRepository.GetTotalCountAsync();
-        return (allDiscussions, totalCount);
-    }
 }

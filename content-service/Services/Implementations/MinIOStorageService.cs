@@ -4,7 +4,7 @@ using Minio.DataModel.Args;
 
 namespace ContentService.Services.Implementations;
 
-public class MinIoStorageService : IStorageService
+public sealed class MinIoStorageService : IStorageService
 {
     private readonly ILogger<MinIoStorageService> _logger;
     private readonly IMinioClient _minioClient;
@@ -18,12 +18,12 @@ public class MinIoStorageService : IStorageService
         var endpoint = configuration["MinIO:Endpoint"] ?? "localhost:9000";
         var accessKey = configuration["MinIO:AccessKey"] ?? "minioadmin";
         var secretKey = configuration["MinIO:SecretKey"] ?? "minioadmin";
-        var useSSL = bool.Parse(configuration["MinIO:UseSSL"] ?? "false");
+        var useSsl = bool.Parse(configuration["MinIO:UseSSL"] ?? "false");
 
         _minioClient = new MinioClient()
             .WithEndpoint(endpoint)
             .WithCredentials(accessKey, secretKey)
-            .WithSSL(useSSL)
+            .WithSSL(useSsl)
             .Build();
 
         _logger.LogInformation("MinIO client initialized for endpoint {Endpoint}", endpoint);

@@ -1,11 +1,12 @@
 using System.Text;
 using System.Text.Json;
+using ContentService.Constants;
 using ContentService.Services.Interfaces;
 using RabbitMQ.Client;
 
 namespace ContentService.Services.Implementations;
 
-public class RabbitMqEventPublisher : IEventPublisher, IDisposable
+public sealed class RabbitMqEventPublisher : IEventPublisher, IDisposable
 {
     private readonly IModel _channel;
     private readonly IConnection _connection;
@@ -34,7 +35,7 @@ public class RabbitMqEventPublisher : IEventPublisher, IDisposable
             Password = password,
             VirtualHost = virtualHost,
             AutomaticRecoveryEnabled = true,
-            NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
+            NetworkRecoveryInterval = TimeSpan.FromSeconds(ApplicationConstants.Intervals.NetworkRecoverySeconds)
         };
 
         _connection = factory.CreateConnection();

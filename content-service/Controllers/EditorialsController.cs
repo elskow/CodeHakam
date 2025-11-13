@@ -1,4 +1,4 @@
-using ContentService.DTOs;
+using ContentService.DTOs.Common;
 using ContentService.DTOs.Requests;
 using ContentService.DTOs.Responses;
 using ContentService.Models;
@@ -16,55 +16,6 @@ public class EditorialsController(
     ILogger<EditorialsController> logger)
     : BaseApiController
 {
-    /// <summary>
-    ///     Get editorial for a problem
-    /// </summary>
-    [HttpGet("problem/{problemId}")]
-    [AllowAnonymous]
-    [ProducesResponseType(typeof(ApiResponse<EditorialResponse>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetEditorial(long problemId)
-    {
-        try
-        {
-            var problem = await problemService.GetProblemAsync(problemId);
-            if (problem == null)
-            {
-                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
-            }
-
-            var editorial = await editorialService.GetEditorialAsync(problemId);
-            if (editorial == null)
-            {
-                return NotFound(ApiResponse<object>.ErrorResponse("Editorial not found for this problem."));
-            }
-
-            // Only show published editorials to non-authors
-            if (!editorial.IsPublished)
-            {
-                if (User.Identity?.IsAuthenticated != true)
-                {
-                    return NotFound(new { error = "Editorial not found for this problem." });
-                }
-
-                var userId = GetUserIdFromClaims();
-                var isAuthorOrAdmin = await problemService.IsAuthorOrAdminAsync(problemId, userId, IsAdmin());
-
-                if (!isAuthorOrAdmin)
-                if (editorial.IsPublished == false)
-                {
-                    return NotFound(ApiResponse<object>.ErrorResponse("Editorial not found for this problem."));
-                }
-            }
-
-            return Ok(ApiResponse<EditorialResponse>.SuccessResponse(MapToEditorialResponse(editorial)));
-        }
-        catch (Exception ex)
-        {
-            return HandleException(ex, logger, "GetEditorial");
-        }
-    }
-
     /// <summary>
     ///     Get editorial by ID
     /// </summary>
@@ -94,9 +45,11 @@ public class EditorialsController(
                 var isAuthorOrAdmin = await problemService.IsAuthorOrAdminAsync(editorial.ProblemId, userId, IsAdmin());
 
                 if (!isAuthorOrAdmin)
-                if (editorial.IsPublished == false)
                 {
-                    return NotFound(ApiResponse<object>.ErrorResponse("Editorial not found."));
+                    if (!editorial.IsPublished)
+                    {
+                        return NotFound(ApiResponse<object>.ErrorResponse("Editorial not found."));
+                    }
                 }
             }
 
@@ -109,60 +62,6 @@ public class EditorialsController(
     }
 
     /// <summary>
-    ///     Create or update editorial for a problem (requires problem ownership or Admin role)
-    /// </summary>
-    [HttpPost]
-    [Authorize]
-    [ProducesResponseType(typeof(ApiResponse<EditorialResponse>), StatusCodes.Status201Created)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> CreateEditorial([FromBody] CreateEditorialRequest request)
-    {
-        try
-        {
-            var userId = GetUserIdFromClaims();
-
-            // Verify problem exists
-            var problem = await problemService.GetProblemAsync(request.ProblemId);
-            if (problem == null)
-            {
-                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
-            }
-
-            // Check authorization
-            var isAuthorOrAdmin = await problemService.IsAuthorOrAdminAsync(request.ProblemId, userId, IsAdmin());
-            if (!isAuthorOrAdmin)
-            {
-                return Forbid();
-            }
-
-            var editorial = await editorialService.CreateOrUpdateEditorialAsync(
-                request.ProblemId,
-                userId,
-                request.Content,
-                request.TimeComplexity,
-                request.SpaceComplexity,
-                request.VideoUrl);
-
-            logger.LogInformation(
-                "Editorial created/updated for problem {ProblemId} by user {UserId}",
-                request.ProblemId, userId);
-
-            return CreatedAtAction(
-                nameof(GetEditorialById),
-                new { id = editorial.Id },
-                ApiResponse<EditorialResponse>.SuccessResponse(
-                    MapToEditorialResponse(editorial),
-                    "Editorial created successfully"));
-        }
-        catch (Exception ex)
-        {
-            return HandleException(ex, logger, "CreateEditorial");
-        }
-    }
-
-    /// <summary>
     ///     Update editorial content (requires ownership or Admin role)
     /// </summary>
     [HttpPut("{id}")]
@@ -171,8 +70,20 @@ public class EditorialsController(
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> UpdateEditorial(long id, [FromBody] CreateEditorialRequest request)
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> UpdateEditorial(long id, [FromBody] UpdateEditorialRequest request)
     {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "Validation failed",
+                ModelState.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? Array.Empty<string>()
+                )
+            ));
+        }
+
         try
         {
             var userId = GetUserIdFromClaims();
@@ -180,7 +91,7 @@ public class EditorialsController(
             var existingEditorial = await editorialService.GetEditorialByIdAsync(id);
             if (existingEditorial == null)
             {
-                return NotFound(new { error = "Editorial not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Editorial not found."));
             }
 
             // Check authorization
@@ -213,11 +124,12 @@ public class EditorialsController(
     /// <summary>
     ///     Publish editorial (requires ownership or Admin role)
     /// </summary>
-    [HttpPost("{id}/publish")]
+    [HttpPatch("{id}/publish")]
     [Authorize]
     [ProducesResponseType(typeof(ApiResponse<EditorialResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> PublishEditorial(long id)
     {
         try
@@ -255,11 +167,12 @@ public class EditorialsController(
     /// <summary>
     ///     Unpublish editorial (requires ownership or Admin role)
     /// </summary>
-    [HttpPost("{id}/unpublish")]
+    [HttpPatch("{id}/unpublish")]
     [Authorize]
     [ProducesResponseType(typeof(ApiResponse<EditorialResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> UnpublishEditorial(long id)
     {
         try
@@ -302,6 +215,7 @@ public class EditorialsController(
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> DeleteEditorial(long id)
     {
         try

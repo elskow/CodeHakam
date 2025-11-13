@@ -1,9 +1,11 @@
 using ContentService.Models;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace ContentService.Repositories.Interfaces;
 
 public interface IDiscussionRepository
 {
+    Task<IDbContextTransaction> BeginTransactionAsync();
     Task<Discussion?> GetByIdAsync(long id, bool includeComments = false);
     Task<IEnumerable<Discussion>> GetByProblemIdAsync(long problemId, int page, int pageSize);
     Task<IEnumerable<Discussion>> GetAllAsync(int page, int pageSize);
@@ -14,6 +16,10 @@ public interface IDiscussionRepository
     Task<bool> DeleteAsync(long id);
     Task<bool> ExistsAsync(long id);
     Task IncrementVoteCountAsync(long discussionId, int increment);
+    Task<bool> HasUserVotedAsync(long discussionId, long userId);
+    Task<bool?> GetUserVoteAsync(long discussionId, long userId);
+    Task RecordVoteAsync(long discussionId, long userId, bool isUpvote);
+    Task UpdateVoteAsync(long discussionId, long userId, bool isUpvote);
     Task IncrementCommentCountAsync(long discussionId);
     Task DecrementCommentCountAsync(long discussionId);
     Task<bool> LockAsync(long id);

@@ -4,21 +4,16 @@ using ContentService.Enums;
 using ContentService.Models;
 using ContentService.Repositories.Interfaces;
 using ContentService.Services.Interfaces;
-using Microsoft.EntityFrameworkCore;
 
 namespace ContentService.Services.Implementations;
 
-public class ProblemService(
+public sealed class ProblemService(
     IProblemRepository problemRepository,
     ContentDbContext dbContext,
     IEventPublisher eventPublisher,
     ILogger<ProblemService> logger)
     : IProblemService
 {
-    private async Task<UserProfile?> GetUserProfileAsync(long userId)
-    {
-        return await dbContext.UserProfiles.FindAsync(userId);
-    }
     public async Task<Problem?> GetProblemAsync(long id, CancellationToken cancellationToken = default)
     {
         return await problemRepository.GetByIdAsync(id, includeRelated: true);
@@ -61,6 +56,20 @@ public class ProblemService(
             visibility: null,
             page,
             pageSize);
+    }
+
+    public async Task<int> GetSearchCountAsync(
+        string? searchTerm,
+        Difficulty? difficulty,
+        List<string>? tags,
+        CancellationToken cancellationToken = default)
+    {
+        var tag = tags?.FirstOrDefault();
+        return await problemRepository.GetSearchCountAsync(
+            searchTerm,
+            difficulty,
+            tag,
+            visibility: null);
     }
 
     public async Task<Problem> CreateProblemAsync(
@@ -144,11 +153,6 @@ public class ProblemService(
             throw new KeyNotFoundException($"Problem with ID {problemId} not found");
         }
 
-        if (problem.AuthorId != userId)
-        {
-            throw new UnauthorizedAccessException("Only the author can update this problem");
-        }
-
         // Update only non-null fields
         if (title != null)
         {
@@ -228,11 +232,6 @@ public class ProblemService(
             throw new KeyNotFoundException($"Problem with ID {id} not found");
         }
 
-        if (problem.AuthorId != userId)
-        {
-            throw new UnauthorizedAccessException("Only the author can delete this problem");
-        }
-
         await problemRepository.DeleteAsync(id);
 
         logger.LogInformation("Problem deleted: {ProblemId} by user {UserId}", id, userId);
@@ -290,6 +289,10 @@ public class ProblemService(
 
         var problem = await problemRepository.GetByIdAsync(problemId);
         return problem?.AuthorId == userId;
+    }
+    private async Task<UserProfile?> GetUserProfileAsync(long userId)
+    {
+        return await dbContext.UserProfiles.FindAsync(userId);
     }
 
     private async Task<string> GenerateUniqueSlugAsync(string title)

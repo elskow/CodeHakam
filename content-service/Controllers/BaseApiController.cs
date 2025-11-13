@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using ContentService.DTOs;
+using ContentService.DTOs.Common;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ContentService.Controllers;

@@ -1,5 +1,5 @@
 using ContentService.Data;
-using ContentService.Repositories.Impl;
+using ContentService.Repositories.Implementations;
 using ContentService.Tests.Helpers;
 using FluentAssertions;
 
@@ -14,6 +14,12 @@ public class TestCaseRepositoryTests : IDisposable
     {
         _context = TestDbContextFactory.CreateInMemoryContext($"TestCaseRepositoryTests_{Guid.NewGuid()}");
         _repository = new TestCaseRepository(_context);
+    }
+
+    public void Dispose()
+    {
+        _context.Database.EnsureDeleted();
+        _context.Dispose();
     }
 
     [Fact]
@@ -267,11 +273,5 @@ public class TestCaseRepositoryTests : IDisposable
         var result = await _repository.ExistsAsync(999);
 
         result.Should().BeFalse();
-    }
-
-    public void Dispose()
-    {
-        _context.Database.EnsureDeleted();
-        _context.Dispose();
     }
 }

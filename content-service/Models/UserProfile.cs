@@ -4,7 +4,7 @@ namespace ContentService.Models;
 /// Local cache of user profile data from account-service.
 /// Updated via RabbitMQ events (user.created, user.updated, user.deleted).
 /// </summary>
-public class UserProfile
+public sealed class UserProfile
 {
     public long UserId { get; set; }
     public required string Username { get; set; }

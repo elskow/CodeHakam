@@ -10,6 +10,7 @@ public class ContentDbContext(DbContextOptions<ContentDbContext> options) : DbCo
     public DbSet<Editorial> Editorials { get; set; }
     public DbSet<Discussion> Discussions { get; set; }
     public DbSet<DiscussionComment> DiscussionComments { get; set; }
+    public DbSet<DiscussionVote> DiscussionVotes { get; set; }
     public DbSet<ProblemTag> ProblemTags { get; set; }
     public DbSet<ProblemList> ProblemLists { get; set; }
     public DbSet<UserProfile> UserProfiles { get; set; }
@@ -26,6 +27,7 @@ public class ContentDbContext(DbContextOptions<ContentDbContext> options) : DbCo
         ConfigureEditorial(modelBuilder);
         ConfigureDiscussion(modelBuilder);
         ConfigureDiscussionComment(modelBuilder);
+        ConfigureDiscussionVote(modelBuilder);
         ConfigureProblemTag(modelBuilder);
         ConfigureProblemList(modelBuilder);
         ConfigureUserProfile(modelBuilder);
@@ -275,6 +277,7 @@ public class ContentDbContext(DbContextOptions<ContentDbContext> options) : DbCo
         modelBuilder.Entity<Discussion>(entity =>
         {
             entity.ToTable("discussions");
+
             entity.HasKey(d => d.Id);
 
             entity.Property(d => d.Id)
@@ -295,7 +298,6 @@ public class ContentDbContext(DbContextOptions<ContentDbContext> options) : DbCo
 
             entity.Property(d => d.Content)
                 .HasColumnName("content")
-                .HasMaxLength(10000)
                 .IsRequired();
 
             entity.Property(d => d.VoteCount)
@@ -314,16 +316,20 @@ public class ContentDbContext(DbContextOptions<ContentDbContext> options) : DbCo
                 .HasColumnName("is_pinned")
                 .HasDefaultValue(false);
 
+            entity.Property(d => d.IsActive)
+                .HasColumnName("is_active")
+                .HasDefaultValue(true);
+
             entity.Property(d => d.CreatedAt)
                 .HasColumnName("created_at")
-                .IsRequired();
+                .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
             entity.Property(d => d.UpdatedAt)
                 .HasColumnName("updated_at")
-                .IsRequired();
+                .HasDefaultValueSql("CURRENT_TIMESTAMP");
 
             entity.HasOne(d => d.Problem)
-                .WithMany(p => p.Discussions)
+                .WithMany()
                 .HasForeignKey(d => d.ProblemId)
                 .OnDelete(DeleteBehavior.Cascade);
 
@@ -335,6 +341,9 @@ public class ContentDbContext(DbContextOptions<ContentDbContext> options) : DbCo
 
             entity.HasIndex(d => d.CreatedAt)
                 .HasDatabaseName("ix_discussions_created_at");
+
+            entity.HasIndex(d => d.IsActive)
+                .HasDatabaseName("ix_discussions_is_active");
         });
     }
 
@@ -526,6 +535,55 @@ public class ContentDbContext(DbContextOptions<ContentDbContext> options) : DbCo
 
             entity.HasIndex(up => up.UpdatedAt)
                 .HasDatabaseName("ix_user_profiles_updated_at");
+        });
+    }
+
+    private static void ConfigureDiscussionVote(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<DiscussionVote>(entity =>
+        {
+            entity.ToTable("discussion_votes");
+
+            entity.HasKey(v => v.Id);
+
+            entity.Property(v => v.Id)
+                .HasColumnName("id")
+                .ValueGeneratedOnAdd();
+
+            entity.Property(v => v.DiscussionId)
+                .HasColumnName("discussion_id")
+                .IsRequired();
+
+            entity.Property(v => v.UserId)
+                .HasColumnName("user_id")
+                .IsRequired();
+
+            entity.Property(v => v.IsUpvote)
+                .HasColumnName("is_upvote")
+                .IsRequired();
+
+            entity.Property(v => v.CreatedAt)
+                .HasColumnName("created_at")
+                .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+            entity.Property(v => v.UpdatedAt)
+                .HasColumnName("updated_at")
+                .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+            entity.HasOne(v => v.Discussion)
+                .WithMany()
+                .HasForeignKey(v => v.DiscussionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(v => new { v.DiscussionId, v.UserId })
+                .IsUnique()
+                .HasDatabaseName("ix_discussion_votes_discussion_user");
+
+            entity.HasIndex(v => v.DiscussionId)
+                .HasDatabaseName("ix_discussion_votes_discussion_id");
+
+            entity.HasIndex(v => v.UserId)
+                .HasDatabaseName("ix_discussion_votes_user_id");
         });
     }
 }

@@ -1,5 +1,4 @@
 using ContentService.Models;
-using Microsoft.AspNetCore.Http;
 
 namespace ContentService.Services.Interfaces;
 

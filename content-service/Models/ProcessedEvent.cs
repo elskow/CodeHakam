@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace ContentService.Models;
 
 [Table("processed_events")]
-public class ProcessedEvent
+public sealed class ProcessedEvent
 {
     [Key]
     [Column("id")]

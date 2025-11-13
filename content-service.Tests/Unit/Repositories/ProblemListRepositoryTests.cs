@@ -1,5 +1,5 @@
 using ContentService.Data;
-using ContentService.Repositories.Impl;
+using ContentService.Repositories.Implementations;
 using ContentService.Tests.Helpers;
 using FluentAssertions;
 
@@ -14,6 +14,12 @@ public class ProblemListRepositoryTests : IDisposable
     {
         _context = TestDbContextFactory.CreateInMemoryContext($"ProblemListRepositoryTests_{Guid.NewGuid()}");
         _repository = new ProblemListRepository(_context);
+    }
+
+    public void Dispose()
+    {
+        _context.Database.EnsureDeleted();
+        _context.Dispose();
     }
 
     [Fact]
@@ -57,7 +63,7 @@ public class ProblemListRepositoryTests : IDisposable
     [Fact]
     public async Task GetByOwnerAsync_WithPagination_ShouldReturnCorrectPage()
     {
-        for (int i = 1; i <= 5; i++)
+        for (var i = 1; i <= 5; i++)
         {
             var list = TestDataBuilder.CreateProblemList(ownerId: 1, title: $"List {i}");
             await _context.ProblemLists.AddAsync(list);
@@ -111,7 +117,7 @@ public class ProblemListRepositoryTests : IDisposable
     [Fact]
     public async Task GetPublicListsAsync_WithPagination_ShouldReturnCorrectPage()
     {
-        for (int i = 1; i <= 5; i++)
+        for (var i = 1; i <= 5; i++)
         {
             var list = TestDataBuilder.CreateProblemList(title: $"Public List {i}", isPublic: true);
             await _context.ProblemLists.AddAsync(list);
@@ -343,11 +349,5 @@ public class ProblemListRepositoryTests : IDisposable
         var result = await _repository.ContainsProblemAsync(listId: 999, problemId: 1);
 
         result.Should().BeFalse();
-    }
-
-    public void Dispose()
-    {
-        _context.Database.EnsureDeleted();
-        _context.Dispose();
     }
 }

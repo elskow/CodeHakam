@@ -1,10 +1,10 @@
 namespace ContentService.Events;
 
-public class UserEvent
+public record UserEvent
 {
-    public long UserId { get; set; }
-    public string Username { get; set; } = string.Empty;
-    public string DisplayName { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public string? AvatarUrl { get; set; }
+    public long UserId { get; init; }
+    public string Username { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string Email { get; init; } = string.Empty;
+    public string? AvatarUrl { get; init; }
 }

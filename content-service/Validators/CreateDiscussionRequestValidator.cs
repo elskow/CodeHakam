@@ -7,9 +7,6 @@ public class CreateDiscussionRequestValidator : AbstractValidator<CreateDiscussi
 {
     public CreateDiscussionRequestValidator()
     {
-        RuleFor(x => x.ProblemId)
-            .GreaterThan(0).WithMessage("Problem ID must be greater than 0.");
-
         RuleFor(x => x.Title)
             .NotEmpty().WithMessage("Title is required.")
             .MinimumLength(5).WithMessage("Title must be at least 5 characters.")

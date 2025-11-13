@@ -1,34 +1,25 @@
 using System.Net;
 using System.Text.Json;
-using ContentService.DTOs;
+using ContentService.DTOs.Common;
 
 namespace ContentService.Middleware;
 
-public class ExceptionHandlingMiddleware
+public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
-
-    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
-    {
-        _next = next;
-        _logger = logger;
-    }
-
     public async Task InvokeAsync(HttpContext context)
     {
         try
         {
-            await _next(context);
+            await next(context);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled exception occurred: {Message}", ex.Message);
+            logger.LogError(ex, "Unhandled exception occurred: {Message}", ex.Message);
             await HandleExceptionAsync(context, ex);
         }
     }
 
-    private static async Task HandleExceptionAsync(HttpContext context, Exception exception)
+    private async static Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
         context.Response.ContentType = "application/json";
 
@@ -72,7 +63,7 @@ public class ExceptionHandlingMiddleware
         await context.Response.WriteAsync(json);
     }
 
-    private static (HttpStatusCode StatusCode, ApiResponse<object> ApiResponse) CreateResponse(
+    private static (HttpStatusCode StatusCode, DTOs.Common.ApiResponse<object> ApiResponse) CreateResponse(
         HttpStatusCode statusCode,
         string message,
         string? detail = null)
@@ -80,7 +71,7 @@ public class ExceptionHandlingMiddleware
         var apiResponse = ApiResponse<object>.ErrorResponse(
             message,
             detail != null
-                ? new Dictionary<string, string[]> { { "detail", new[] { detail } } }
+                ? new Dictionary<string, string[]> { { "detail", [detail] } }
                 : null
         );
 

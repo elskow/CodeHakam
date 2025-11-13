@@ -28,5 +28,4 @@ public sealed class Problem
     public ICollection<TestCase> TestCases { get; set; } = new List<TestCase>();
     public Editorial? Editorial { get; set; }
     public ICollection<ProblemTag> Tags { get; set; } = new List<ProblemTag>();
-    public ICollection<Discussion> Discussions { get; set; } = new List<Discussion>();
 }

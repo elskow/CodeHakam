@@ -4,7 +4,7 @@ using ContentService.Services.Interfaces;
 
 namespace ContentService.Services.Implementations;
 
-public class EditorialService(
+public sealed class EditorialService(
     IEditorialRepository editorialRepository,
     IProblemRepository problemRepository,
     IEventPublisher eventPublisher,
@@ -115,11 +115,6 @@ public class EditorialService(
             throw new InvalidOperationException($"Problem with ID {problemId} not found");
         }
 
-        if (problem.AuthorId != authorId)
-        {
-            throw new UnauthorizedAccessException("Only the problem author can create/update an editorial");
-        }
-
         var existingEditorial = await editorialRepository.GetByProblemIdAsync(problemId);
 
         if (existingEditorial != null)
@@ -169,11 +164,6 @@ public class EditorialService(
             throw new InvalidOperationException($"Editorial not found for problem {problemId}");
         }
 
-        if (editorial.AuthorId != userId)
-        {
-            throw new UnauthorizedAccessException("Only the editorial author can publish it");
-        }
-
         if (editorial.IsPublished)
         {
             throw new InvalidOperationException($"Editorial for problem {problemId} is already published");
@@ -199,11 +189,6 @@ public class EditorialService(
             throw new InvalidOperationException($"Editorial not found for problem {problemId}");
         }
 
-        if (editorial.AuthorId != userId)
-        {
-            throw new UnauthorizedAccessException("Only the editorial author can unpublish it");
-        }
-
         if (!editorial.IsPublished)
         {
             throw new InvalidOperationException($"Editorial for problem {problemId} is not published");
@@ -225,11 +210,6 @@ public class EditorialService(
         if (editorial == null)
         {
             throw new InvalidOperationException($"Editorial not found for problem {problemId}");
-        }
-
-        if (editorial.AuthorId != userId)
-        {
-            throw new UnauthorizedAccessException("Only the editorial author can delete it");
         }
 
         await editorialRepository.DeleteAsync(editorial.Id);

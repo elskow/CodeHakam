@@ -1,5 +1,5 @@
 using ContentService.Data;
-using ContentService.Repositories.Impl;
+using ContentService.Repositories.Implementations;
 using ContentService.Tests.Helpers;
 using FluentAssertions;
 
@@ -14,6 +14,12 @@ public class EditorialRepositoryTests : IDisposable
     {
         _context = TestDbContextFactory.CreateInMemoryContext($"EditorialRepositoryTests_{Guid.NewGuid()}");
         _repository = new EditorialRepository(_context);
+    }
+
+    public void Dispose()
+    {
+        _context.Database.EnsureDeleted();
+        _context.Dispose();
     }
 
     [Fact]
@@ -92,7 +98,7 @@ public class EditorialRepositoryTests : IDisposable
     [Fact]
     public async Task GetPublishedEditorialsAsync_WithPagination_ShouldReturnCorrectPage()
     {
-        for (int i = 1; i <= 5; i++)
+        for (var i = 1; i <= 5; i++)
         {
             var problem = TestDataBuilder.CreateProblem(slug: $"problem-{i}");
             await _context.Problems.AddAsync(problem);
@@ -293,11 +299,5 @@ public class EditorialRepositoryTests : IDisposable
         var count = await _repository.GetPublishedCountAsync();
 
         count.Should().Be(0);
-    }
-
-    public void Dispose()
-    {
-        _context.Database.EnsureDeleted();
-        _context.Dispose();
     }
 }
