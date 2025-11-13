@@ -1,3 +1,4 @@
+using ContentService.DTOs;
 using ContentService.DTOs.Requests;
 using ContentService.DTOs.Responses;
 using ContentService.Models;
@@ -20,7 +21,7 @@ public class DiscussionsController(
     /// </summary>
     [HttpGet]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(PagedResponse<DiscussionResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResponse<DiscussionResponse>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetDiscussions(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
@@ -38,7 +39,7 @@ public class DiscussionsController(
                 TotalCount = totalCount
             };
 
-            return Ok(response);
+            return Ok(ApiResponse<PagedResponse<DiscussionResponse>>.SuccessResponse(response));
         }
         catch (Exception ex)
         {
@@ -51,8 +52,8 @@ public class DiscussionsController(
     /// </summary>
     [HttpGet("problem/{problemId}")]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(PagedResponse<DiscussionResponse>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResponse<DiscussionResponse>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetProblemDiscussions(
         long problemId,
         [FromQuery] int page = 1,
@@ -63,7 +64,7 @@ public class DiscussionsController(
             var problem = await problemService.GetProblemAsync(problemId);
             if (problem == null)
             {
-                return NotFound(new { error = "Problem not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
             }
 
             var discussions = await discussionService.GetDiscussionsByProblemAsync(problemId, page, pageSize);
@@ -77,7 +78,7 @@ public class DiscussionsController(
                 TotalCount = totalCount
             };
 
-            return Ok(response);
+            return Ok(ApiResponse<PagedResponse<DiscussionResponse>>.SuccessResponse(response));
         }
         catch (Exception ex)
         {
@@ -90,8 +91,8 @@ public class DiscussionsController(
     /// </summary>
     [HttpGet("{id}")]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(DiscussionResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<DiscussionResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetDiscussion(long id)
     {
         try
@@ -99,10 +100,10 @@ public class DiscussionsController(
             var discussion = await discussionService.GetDiscussionAsync(id);
             if (discussion == null)
             {
-                return NotFound(new { error = "Discussion not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Discussion not found."));
             }
 
-            return Ok(MapToDiscussionResponseWithComments(discussion));
+            return Ok(ApiResponse<DiscussionResponse>.SuccessResponse(MapToDiscussionResponseWithComments(discussion)));
         }
         catch (Exception ex)
         {
@@ -115,10 +116,9 @@ public class DiscussionsController(
     /// </summary>
     [HttpPost]
     [Authorize]
-    [ProducesResponseType(typeof(DiscussionResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<DiscussionResponse>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> CreateDiscussion([FromBody] CreateDiscussionRequest request)
     {
         try
@@ -129,7 +129,7 @@ public class DiscussionsController(
             var problem = await problemService.GetProblemAsync(request.ProblemId);
             if (problem == null)
             {
-                return NotFound(new { error = "Problem not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
             }
 
             var discussion = await discussionService.CreateDiscussionAsync(
@@ -145,7 +145,9 @@ public class DiscussionsController(
             return CreatedAtAction(
                 nameof(GetDiscussion),
                 new { id = discussion.Id },
-                MapToDiscussionResponse(discussion));
+                ApiResponse<DiscussionResponse>.SuccessResponse(
+                    MapToDiscussionResponse(discussion),
+                    "Discussion created successfully"));
         }
         catch (Exception ex)
         {
@@ -158,11 +160,10 @@ public class DiscussionsController(
     /// </summary>
     [HttpPut("{id}")]
     [Authorize]
-    [ProducesResponseType(typeof(DiscussionResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<DiscussionResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateDiscussion(long id, [FromBody] CreateDiscussionRequest request)
     {
         try
@@ -172,7 +173,7 @@ public class DiscussionsController(
             var discussion = await discussionService.GetDiscussionAsync(id);
             if (discussion == null)
             {
-                return NotFound(new { error = "Discussion not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Discussion not found."));
             }
 
             // Check authorization
@@ -189,7 +190,9 @@ public class DiscussionsController(
 
             logger.LogInformation("Discussion {DiscussionId} updated by user {UserId}", id, userId);
 
-            return Ok(MapToDiscussionResponse(updatedDiscussion));
+            return Ok(ApiResponse<DiscussionResponse>.SuccessResponse(
+                MapToDiscussionResponse(updatedDiscussion),
+                "Discussion updated successfully"));
         }
         catch (Exception ex)
         {
@@ -202,10 +205,9 @@ public class DiscussionsController(
     /// </summary>
     [HttpDelete("{id}")]
     [Authorize]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteDiscussion(long id)
     {
         try
@@ -215,7 +217,7 @@ public class DiscussionsController(
             var discussion = await discussionService.GetDiscussionAsync(id);
             if (discussion == null)
             {
-                return NotFound(new { error = "Discussion not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Discussion not found."));
             }
 
             // Check authorization
@@ -228,7 +230,7 @@ public class DiscussionsController(
 
             logger.LogInformation("Discussion {DiscussionId} deleted by user {UserId}", id, userId);
 
-            return NoContent();
+            return Ok(ApiResponse<object>.SuccessResponse(new { id }, "Discussion deleted successfully"));
         }
         catch (Exception ex)
         {
@@ -241,10 +243,9 @@ public class DiscussionsController(
     /// </summary>
     [HttpPost("comments")]
     [Authorize]
-    [ProducesResponseType(typeof(CommentResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<CommentResponse>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> AddComment([FromBody] AddCommentRequest request)
     {
         try
@@ -255,7 +256,7 @@ public class DiscussionsController(
             var discussion = await discussionService.GetDiscussionAsync(request.DiscussionId);
             if (discussion == null)
             {
-                return NotFound(new { error = "Discussion not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Discussion not found."));
             }
 
             // If replying to a comment, verify parent exists
@@ -264,7 +265,7 @@ public class DiscussionsController(
                 var parentComment = await discussionService.GetCommentAsync(request.ParentId.Value);
                 if (parentComment == null)
                 {
-                    return NotFound(new { error = "Parent comment not found." });
+                    return NotFound(ApiResponse<object>.ErrorResponse("Parent comment not found."));
                 }
             }
 
@@ -281,7 +282,9 @@ public class DiscussionsController(
             return CreatedAtAction(
                 nameof(GetDiscussion),
                 new { id = request.DiscussionId },
-                MapToCommentResponse(comment));
+                ApiResponse<CommentResponse>.SuccessResponse(
+                    MapToCommentResponse(comment),
+                    "Comment added successfully"));
         }
         catch (Exception ex)
         {
@@ -294,10 +297,9 @@ public class DiscussionsController(
     /// </summary>
     [HttpDelete("comments/{commentId}")]
     [Authorize]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteComment(long commentId)
     {
         try
@@ -307,7 +309,7 @@ public class DiscussionsController(
             var comment = await discussionService.GetCommentAsync(commentId);
             if (comment == null)
             {
-                return NotFound(new { error = "Comment not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Comment not found."));
             }
 
             // Check authorization
@@ -320,7 +322,7 @@ public class DiscussionsController(
 
             logger.LogInformation("Comment {CommentId} deleted by user {UserId}", commentId, userId);
 
-            return NoContent();
+            return Ok(ApiResponse<object>.SuccessResponse(new { commentId }, "Comment deleted successfully"));
         }
         catch (Exception ex)
         {
@@ -333,10 +335,9 @@ public class DiscussionsController(
     /// </summary>
     [HttpPost("{id}/vote")]
     [Authorize]
-    [ProducesResponseType(typeof(DiscussionResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<DiscussionResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> VoteDiscussion(long id, [FromBody] VoteRequest request)
     {
         try
@@ -346,7 +347,7 @@ public class DiscussionsController(
             var discussion = await discussionService.GetDiscussionAsync(id);
             if (discussion == null)
             {
-                return NotFound(new { error = "Discussion not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Discussion not found."));
             }
 
             await discussionService.VoteDiscussionAsync(id, request.IsUpvote, userId);
@@ -356,7 +357,9 @@ public class DiscussionsController(
                 userId, id, request.IsUpvote);
 
             var updatedDiscussion = await discussionService.GetDiscussionAsync(id);
-            return Ok(MapToDiscussionResponse(updatedDiscussion!));
+            return Ok(ApiResponse<DiscussionResponse>.SuccessResponse(
+                MapToDiscussionResponse(updatedDiscussion!),
+                "Vote recorded successfully"));
         }
         catch (Exception ex)
         {

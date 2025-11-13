@@ -2,6 +2,7 @@
 .obsidian
 PROJECT_PLAN.md
 docs
+Documentation
 .tye/*
 .idea/**/workspace.xml
 .idea/**/tasks.xml

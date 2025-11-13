@@ -1,3 +1,4 @@
+using ContentService.DTOs;
 using ContentService.DTOs.Requests;
 using ContentService.DTOs.Responses;
 using ContentService.Services.Interfaces;
@@ -19,8 +20,8 @@ public class TestCasesController(
     /// </summary>
     [HttpGet("problem/{problemId}")]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(List<TestCaseResponse>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<List<TestCaseResponse>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetTestCases(long problemId, [FromQuery] bool samplesOnly = true)
     {
         try
@@ -28,7 +29,7 @@ public class TestCasesController(
             var problem = await problemService.GetProblemAsync(problemId);
             if (problem == null)
             {
-                return NotFound(new { error = "Problem not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
             }
 
             // Only problem authors and admins can see all test cases
@@ -57,7 +58,7 @@ public class TestCasesController(
                 CreatedAt = tc.CreatedAt
             }).ToList();
 
-            return Ok(response);
+            return Ok(ApiResponse<List<TestCaseResponse>>.SuccessResponse(response));
         }
         catch (Exception ex)
         {
@@ -70,9 +71,9 @@ public class TestCasesController(
     /// </summary>
     [HttpGet("{id}")]
     [Authorize]
-    [ProducesResponseType(typeof(TestCaseResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<TestCaseResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetTestCase(long id)
     {
         try
@@ -80,7 +81,7 @@ public class TestCasesController(
             var testCase = await testCaseService.GetTestCaseAsync(id);
             if (testCase == null)
             {
-                return NotFound(new { error = "Test case not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Test case not found."));
             }
 
             // Check authorization - only author/admin or for sample test cases
@@ -106,7 +107,7 @@ public class TestCasesController(
                 CreatedAt = testCase.CreatedAt
             };
 
-            return Ok(response);
+            return Ok(ApiResponse<TestCaseResponse>.SuccessResponse(response));
         }
         catch (Exception ex)
         {
@@ -119,12 +120,10 @@ public class TestCasesController(
     /// </summary>
     [HttpPost("upload")]
     [Authorize]
-    [RequestSizeLimit(10 * 1024 * 1024)] // 10 MB limit
-    [ProducesResponseType(typeof(TestCaseResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<TestCaseResponse>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UploadTestCase([FromForm] UploadTestCaseRequest request)
     {
         try
@@ -135,7 +134,7 @@ public class TestCasesController(
             var problem = await problemService.GetProblemAsync(request.ProblemId);
             if (problem == null)
             {
-                return NotFound(new { error = "Problem not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
             }
 
             // Check authorization
@@ -192,7 +191,7 @@ public class TestCasesController(
             var testCase = await testCaseService.GetTestCaseAsync(id);
             if (testCase == null)
             {
-                return NotFound(new { error = "Test case not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Test case not found."));
             }
 
             // Check authorization
@@ -232,7 +231,7 @@ public class TestCasesController(
             var testCase = await testCaseService.GetTestCaseAsync(id);
             if (testCase == null)
             {
-                return NotFound(new { error = "Test case not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
             }
 
             // Check authorization
@@ -262,10 +261,9 @@ public class TestCasesController(
     /// </summary>
     [HttpDelete("{id}")]
     [Authorize]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteTestCase(long id)
     {
         try
@@ -273,7 +271,7 @@ public class TestCasesController(
             var testCase = await testCaseService.GetTestCaseAsync(id);
             if (testCase == null)
             {
-                return NotFound(new { error = "Test case not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Test case not found."));
             }
 
             var userId = GetUserIdFromClaims();
@@ -291,7 +289,7 @@ public class TestCasesController(
                 "Test case deleted successfully. ID: {TestCaseId}, User: {UserId}",
                 id, userId);
 
-            return NoContent();
+            return Ok(ApiResponse<object>.SuccessResponse(new { id }, "Test case deleted successfully"));
         }
         catch (Exception ex)
         {
@@ -312,7 +310,7 @@ public class TestCasesController(
             var problem = await problemService.GetProblemAsync(problemId);
             if (problem == null)
             {
-                return NotFound(new { error = "Problem not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
             }
 
             var count = await testCaseService.GetTestCaseCountAsync(problemId);

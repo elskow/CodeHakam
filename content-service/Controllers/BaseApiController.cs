@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using ContentService.DTOs;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ContentService.Controllers;
@@ -25,23 +26,28 @@ public abstract class BaseApiController : ControllerBase
         return userId;
     }
 
-    private string GetUserRoleFromClaims()
+    private IEnumerable<string> GetUserRolesFromClaims()
     {
-        var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value ?? User.FindFirst("role")?.Value;
-
-        return roleClaim ?? "User";
+        return User.FindAll(ClaimTypes.Role).Select(c => c.Value)
+            .Concat(User.FindAll("role").Select(c => c.Value));
     }
 
     protected bool IsProblemSetter()
     {
-        var role = GetUserRoleFromClaims();
-        return role.Equals("ProblemSetter", StringComparison.OrdinalIgnoreCase) || role.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+        var roles = GetUserRolesFromClaims();
+        return roles.Any(r =>
+            r.Equals("setter", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("moderator", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("super_admin", StringComparison.OrdinalIgnoreCase));
     }
 
     protected bool IsAdmin()
     {
-        var role = GetUserRoleFromClaims();
-        return role.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+        var roles = GetUserRolesFromClaims();
+        return roles.Any(r =>
+            r.Equals("admin", StringComparison.OrdinalIgnoreCase) ||
+            r.Equals("super_admin", StringComparison.OrdinalIgnoreCase));
     }
 
     protected IActionResult HandleException(Exception ex, ILogger logger, string operation)
@@ -50,11 +56,11 @@ public abstract class BaseApiController : ControllerBase
 
         return ex switch
         {
-            UnauthorizedAccessException => Unauthorized(new { error = ex.Message }),
-            KeyNotFoundException => NotFound(new { error = ex.Message }),
-            InvalidOperationException => BadRequest(new { error = ex.Message }),
-            ArgumentException => BadRequest(new { error = ex.Message }),
-            _ => StatusCode(statusCode: 500, new { error = "An unexpected error occurred. Please try again later." })
+            UnauthorizedAccessException => Unauthorized(ApiResponse<object>.ErrorResponse(ex.Message)),
+            KeyNotFoundException => NotFound(ApiResponse<object>.ErrorResponse(ex.Message)),
+            InvalidOperationException => BadRequest(ApiResponse<object>.ErrorResponse(ex.Message)),
+            ArgumentException => BadRequest(ApiResponse<object>.ErrorResponse(ex.Message)),
+            _ => StatusCode(statusCode: 500, ApiResponse<object>.ErrorResponse("An unexpected error occurred. Please try again later."))
         };
     }
 }

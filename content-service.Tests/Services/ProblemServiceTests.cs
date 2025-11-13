@@ -1,29 +1,43 @@
+using ContentService.Data;
 using ContentService.Enums;
 using ContentService.Models;
 using ContentService.Repositories.Interfaces;
 using ContentService.Services.Implementations;
 using ContentService.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace ContentService.Tests.Services;
 
-public class ProblemServiceTests
+public class ProblemServiceTests : IDisposable
 {
     private readonly Mock<IEventPublisher> _eventPublisherMock;
     private readonly Mock<IProblemRepository> _problemRepositoryMock;
+    private readonly ContentDbContext _dbContext;
     private readonly ProblemService _service;
 
     public ProblemServiceTests()
     {
+        var options = new DbContextOptionsBuilder<ContentDbContext>()
+            .UseInMemoryDatabase(databaseName: $"ProblemServiceTests_{Guid.NewGuid()}")
+            .Options;
+
+        _dbContext = new ContentDbContext(options);
         _problemRepositoryMock = new Mock<IProblemRepository>();
         _eventPublisherMock = new Mock<IEventPublisher>();
         var loggerMock = new Mock<ILogger<ProblemService>>();
 
         _service = new ProblemService(
             _problemRepositoryMock.Object,
+            _dbContext,
             _eventPublisherMock.Object,
             loggerMock.Object);
+    }
+
+    public void Dispose()
+    {
+        _dbContext?.Dispose();
     }
 
     [Fact]

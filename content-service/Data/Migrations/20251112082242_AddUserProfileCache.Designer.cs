@@ -3,17 +3,20 @@ using System;
 using ContentService.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace ContentService.Migrations
+namespace ContentService.Data.Migrations
 {
     [DbContext(typeof(ContentDbContext))]
-    partial class ContentDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251112082242_AddUserProfileCache")]
+    partial class AddUserProfileCache
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -444,40 +447,6 @@ namespace ContentService.Migrations
                     b.ToTable("problem_tags", "content");
                 });
 
-            modelBuilder.Entity("ContentService.Models.ProcessedEvent", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("EventId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("event_id");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("event_type");
-
-                    b.Property<DateTime>("ProcessedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("processed_at");
-
-                    b.Property<long>("ProcessingDurationMs")
-                        .HasColumnType("bigint")
-                        .HasColumnName("processing_duration_ms");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("processed_events", "content");
-                });
-
             modelBuilder.Entity("ContentService.Models.TestCase", b =>
                 {
                     b.Property<long>("Id")
@@ -541,8 +510,11 @@ namespace ContentService.Migrations
             modelBuilder.Entity("ContentService.Models.UserProfile", b =>
                 {
                     b.Property<long>("UserId")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
                         .HasColumnName("user_id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("UserId"));
 
                     b.Property<string>("AvatarUrl")
                         .HasMaxLength(500)

@@ -1,3 +1,5 @@
+using ContentService.Data;
+using ContentService.DTOs;
 using ContentService.DTOs.Requests;
 using ContentService.DTOs.Responses;
 using ContentService.Enums;
@@ -5,6 +7,7 @@ using ContentService.Models;
 using ContentService.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace ContentService.Controllers;
 
@@ -12,6 +15,7 @@ namespace ContentService.Controllers;
 [Route("api/[controller]")]
 public class ProblemsController(
     IProblemService problemService,
+    ContentDbContext dbContext,
     ILogger<ProblemsController> logger) : BaseApiController
 {
     /// <summary>
@@ -19,7 +23,7 @@ public class ProblemsController(
     /// </summary>
     [HttpGet]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(PagedResponse<ProblemResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResponse<ProblemResponse>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetProblems(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
@@ -43,15 +47,21 @@ public class ProblemsController(
             var problems = await problemService.GetProblemsAsync(page, pageSize, difficultyEnum, visibilityEnum);
             var totalCount = await problemService.GetTotalProblemsCountAsync();
 
+            var problemsList = problems.ToList();
+            var authorIds = problemsList.Select(p => p.AuthorId).Distinct().ToList();
+            var authorProfiles = await dbContext.UserProfiles
+                .Where(up => authorIds.Contains(up.UserId))
+                .ToDictionaryAsync(up => up.UserId);
+
             var response = new PagedResponse<ProblemResponse>
             {
-                Items = problems.Select(MapToProblemResponse).ToList(),
+                Items = problemsList.Select(p => MapToProblemResponse(p, authorProfiles)).ToList(),
                 Page = page,
                 PageSize = pageSize,
                 TotalCount = totalCount
             };
 
-            return Ok(response);
+            return Ok(ApiResponse<PagedResponse<ProblemResponse>>.SuccessResponse(response));
         }
         catch (Exception ex)
         {
@@ -64,7 +74,7 @@ public class ProblemsController(
     /// </summary>
     [HttpGet("search")]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(PagedResponse<ProblemResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResponse<ProblemResponse>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> SearchProblems(
         [FromQuery] string? query = null,
         [FromQuery] string? difficulty = null,
@@ -89,15 +99,21 @@ public class ProblemsController(
 
             var totalCount = await problemService.GetTotalProblemsCountAsync();
 
+            var problemsList = problems.ToList();
+            var authorIds = problemsList.Select(p => p.AuthorId).Distinct().ToList();
+            var authorProfiles = await dbContext.UserProfiles
+                .Where(up => authorIds.Contains(up.UserId))
+                .ToDictionaryAsync(up => up.UserId);
+
             var response = new PagedResponse<ProblemResponse>
             {
-                Items = problems.Select(MapToProblemResponse).ToList(),
+                Items = problemsList.Select(p => MapToProblemResponse(p, authorProfiles)).ToList(),
                 Page = page,
                 PageSize = pageSize,
                 TotalCount = totalCount
             };
 
-            return Ok(response);
+            return Ok(ApiResponse<PagedResponse<ProblemResponse>>.SuccessResponse(response));
         }
         catch (Exception ex)
         {
@@ -110,8 +126,7 @@ public class ProblemsController(
     /// </summary>
     [HttpGet("{id}")]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(ProblemResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<ProblemResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetProblem(long id)
     {
         try
@@ -119,12 +134,19 @@ public class ProblemsController(
             var problem = await problemService.GetProblemAsync(id);
             if (problem == null)
             {
-                return NotFound(new { error = "Problem not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
             }
 
             await problemService.IncrementViewCountAsync(id);
 
-            return Ok(MapToProblemResponse(problem));
+            var authorProfile = await dbContext.UserProfiles.FindAsync(problem.AuthorId);
+            var authorProfiles = new Dictionary<long, UserProfile>();
+            if (authorProfile != null)
+            {
+                authorProfiles[problem.AuthorId] = authorProfile;
+            }
+
+            return Ok(ApiResponse<ProblemResponse>.SuccessResponse(MapToProblemResponse(problem, authorProfiles)));
         }
         catch (Exception ex)
         {
@@ -137,8 +159,8 @@ public class ProblemsController(
     /// </summary>
     [HttpGet("slug/{slug}")]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(ProblemResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<ProblemResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetProblemBySlug(string slug)
     {
         try
@@ -146,12 +168,19 @@ public class ProblemsController(
             var problem = await problemService.GetProblemBySlugAsync(slug);
             if (problem == null)
             {
-                return NotFound(new { error = "Problem not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
             }
 
             await problemService.IncrementViewCountAsync(problem.Id);
 
-            return Ok(MapToProblemResponse(problem));
+            var authorProfile = await dbContext.UserProfiles.FindAsync(problem.AuthorId);
+            var authorProfiles = new Dictionary<long, UserProfile>();
+            if (authorProfile != null)
+            {
+                authorProfiles[problem.AuthorId] = authorProfile;
+            }
+
+            return Ok(ApiResponse<ProblemResponse>.SuccessResponse(MapToProblemResponse(problem, authorProfiles)));
         }
         catch (Exception ex)
         {
@@ -164,9 +193,9 @@ public class ProblemsController(
     /// </summary>
     [HttpPost]
     [Authorize]
-    [ProducesResponseType(typeof(ProblemResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<ProblemResponse>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CreateProblem([FromBody] CreateProblemRequest request)
     {
@@ -197,10 +226,19 @@ public class ProblemsController(
 
             logger.LogInformation("Problem created successfully. ID: {ProblemId}, Author: {AuthorId}", problem.Id, userId);
 
+            var authorProfile = await dbContext.UserProfiles.FindAsync(userId);
+            var authorProfiles = new Dictionary<long, UserProfile>();
+            if (authorProfile != null)
+            {
+                authorProfiles[userId] = authorProfile;
+            }
+
             return CreatedAtAction(
                 nameof(GetProblem),
                 new { id = problem.Id },
-                MapToProblemResponse(problem));
+                ApiResponse<ProblemResponse>.SuccessResponse(
+                    MapToProblemResponse(problem, authorProfiles),
+                    "Problem created successfully"));
         }
         catch (Exception ex)
         {
@@ -213,10 +251,10 @@ public class ProblemsController(
     /// </summary>
     [HttpPut("{id}")]
     [Authorize]
-    [ProducesResponseType(typeof(ProblemResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<ProblemResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateProblem(long id, [FromBody] UpdateProblemRequest request)
     {
@@ -253,7 +291,16 @@ public class ProblemsController(
 
             logger.LogInformation("Problem updated successfully. ID: {ProblemId}, User: {UserId}", id, userId);
 
-            return Ok(MapToProblemResponse(problem));
+            var authorProfile = await dbContext.UserProfiles.FindAsync(problem.AuthorId);
+            var authorProfiles = new Dictionary<long, UserProfile>();
+            if (authorProfile != null)
+            {
+                authorProfiles[problem.AuthorId] = authorProfile;
+            }
+
+            return Ok(ApiResponse<ProblemResponse>.SuccessResponse(
+                MapToProblemResponse(problem, authorProfiles),
+                "Problem updated successfully"));
         }
         catch (Exception ex)
         {
@@ -266,9 +313,9 @@ public class ProblemsController(
     /// </summary>
     [HttpDelete("{id}")]
     [Authorize]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteProblem(long id)
     {
@@ -279,7 +326,7 @@ public class ProblemsController(
 
             logger.LogInformation("Problem deleted successfully. ID: {ProblemId}, User: {UserId}", id, userId);
 
-            return NoContent();
+            return Ok(ApiResponse<object>.SuccessResponse(new { id }, "Problem deleted successfully"));
         }
         catch (Exception ex)
         {
@@ -287,8 +334,10 @@ public class ProblemsController(
         }
     }
 
-    private static ProblemResponse MapToProblemResponse(Problem problem)
+    private static ProblemResponse MapToProblemResponse(Problem problem, Dictionary<long, UserProfile> authorProfiles)
     {
+        authorProfiles.TryGetValue(problem.AuthorId, out var authorProfile);
+
         return new ProblemResponse
         {
             Id = problem.Id,
@@ -302,6 +351,8 @@ public class ProblemsController(
             TimeLimit = problem.TimeLimit,
             MemoryLimit = problem.MemoryLimit,
             AuthorId = problem.AuthorId,
+            AuthorName = authorProfile?.DisplayName,
+            AuthorAvatar = authorProfile?.AvatarUrl,
             Visibility = problem.Visibility.ToString(),
             HintText = problem.HintText,
             Tags = problem.Tags.Select(t => t.Tag).ToList(),

@@ -1,6 +1,7 @@
 using AccountService.Data;
 using AccountService.DTOs;
 using AccountService.Models;
+using AccountService.Services;
 using AccountService.Services.Impl;
 using AccountService.Tests.Helpers;
 using FluentAssertions;
@@ -14,13 +15,15 @@ public class UserServiceTests : IDisposable
 {
     private readonly ApplicationDbContext _context;
     private readonly Mock<ILogger<UserService>> _loggerMock;
+    private readonly Mock<IEventPublisher> _eventPublisherMock;
     private readonly UserService _userService;
 
     public UserServiceTests()
     {
         _context = TestDbContextFactory.CreateInMemoryContext($"UserServiceTests_{Guid.NewGuid()}");
         _loggerMock = new Mock<ILogger<UserService>>();
-        _userService = new UserService(_context, _loggerMock.Object);
+        _eventPublisherMock = new Mock<IEventPublisher>();
+        _userService = new UserService(_context, _eventPublisherMock.Object, _loggerMock.Object);
     }
 
     public void Dispose()

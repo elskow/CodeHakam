@@ -20,6 +20,7 @@ volumes:
   mailhog-data:
   prometheus-data:
   grafana-data:
+  kong-data:
 
 services:
   # ==========================================================================
@@ -29,6 +30,14 @@ services:
     image: postgres:18-alpine
     container_name: codehakam-postgres
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
     environment:
       POSTGRES_DB: codehakam
       POSTGRES_USER: codehakam
@@ -73,6 +82,14 @@ services:
     image: valkey/valkey:9-alpine
     container_name: codehakam-valkey
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
     ports:
       - "6379:6379"
     volumes:
@@ -105,6 +122,14 @@ services:
     image: rabbitmq:4.2-management-alpine
     container_name: codehakam-rabbitmq
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
     environment:
       RABBITMQ_DEFAULT_USER: codehakam
       RABBITMQ_DEFAULT_PASS: dev_password
@@ -131,6 +156,14 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: codehakam-minio
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -154,6 +187,11 @@ services:
   minio-setup:
     image: minio/mc:latest
     container_name: codehakam-minio-setup
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
     depends_on:
       minio:
         condition: service_healthy
@@ -172,12 +210,61 @@ services:
       "
 
   # ==========================================================================
+  # Kong API Gateway
+  # ==========================================================================
+  kong:
+    image: kong:3.9.1
+    container_name: codehakam-kong
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_LOG_LEVEL: info
+    ports:
+      - "8000:8000" # Proxy HTTP
+      - "8002:8002" # Admin GUI
+      - "8443:8443" # Proxy HTTPS
+      - "8001:8001" # Admin API
+    volumes:
+      - ./config/kong/kong.yml:/kong/kong.yml:ro
+    networks:
+      - codehakam
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ==========================================================================
   # MailHog - SMTP Testing Service
   # ==========================================================================
   mailhog:
     image: mailhog/mailhog:v1.0.1
     container_name: codehakam-mailhog
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
     ports:
       - "1025:1025" # SMTP server
       - "8025:8025" # Web UI
@@ -197,6 +284,14 @@ services:
     container_name: codehakam-prometheus
     restart: unless-stopped
     profiles: ["observability"]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
     ports:
       - "9090:9090"
     volumes:
@@ -227,6 +322,14 @@ services:
     profiles: ["observability"]
     depends_on:
       - prometheus
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -254,6 +357,14 @@ services:
     container_name: codehakam-jaeger
     restart: unless-stopped
     profiles: ["observability"]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
       COLLECTOR_ZIPKIN_HOST_PORT: ":9411"
@@ -294,6 +405,8 @@ services:
 # ==========================================================================
 # Service URLs & Credentials
 # ==========================================================================
+# Kong Gateway:   http://localhost:8000 (Proxy), http://localhost:8001 (Admin API)
+# Kong Admin GUI: http://localhost:8002
 # PostgreSQL 18:  localhost:5432 (user: codehakam, pass: dev_password, db: codehakam)
 #                 Note: Each service creates its own schema and user via migrations
 # Valkey 9:       localhost:6379 (no auth)
@@ -312,6 +425,7 @@ services:
 # ==========================================================================
 # Version Info
 # ==========================================================================
+# Kong:       3.9.1 (Latest stable - API Gateway with DB-less mode)
 # PostgreSQL: 18 (Sept 2025 - latest stable, new features and performance improvements)
 # Valkey:     9 (Redis-compatible, open-source fork, latest stable)
 # RabbitMQ:   4.2 (Latest stable with stream improvements and better performance)

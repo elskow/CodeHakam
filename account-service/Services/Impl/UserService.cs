@@ -6,7 +6,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace AccountService.Services.Impl;
 
-public sealed class UserService(ApplicationDbContext context, ILogger<UserService> logger) : IUserService
+public sealed class UserService(
+    ApplicationDbContext context,
+    IEventPublisher eventPublisher,
+    ILogger<UserService> logger) : IUserService
 {
     public async Task<UserProfileDto?> GetUserProfileAsync(long userId)
     {
@@ -80,9 +83,29 @@ public sealed class UserService(ApplicationDbContext context, ILogger<UserServic
 
         user.UpdatedAt = DateTime.UtcNow;
 
-        await context.SaveChangesAsync();
+        // Publish user.updated event for cross-service data sync
+        try
+        {
+            await eventPublisher.PublishUserUpdatedAsync(new UserUpdatedEvent
+            {
+                UserId = user.Id,
+                Username = user.UserName ?? string.Empty,
+                DisplayName = user.FullName ?? user.UserName ?? string.Empty,
+                Email = user.Email ?? string.Empty,
+                AvatarUrl = user.AvatarUrl,
+                UpdatedAt = DateTime.UtcNow
+            });
 
-        logger.LogInformation("User profile updated for user {UserId}", userId);
+            // Save both user updates and outbox events atomically
+            await context.SaveChangesAsync();
+
+            logger.LogInformation("User profile and outbox events saved for user {UserId}", userId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to save user profile or outbox events for user {UserId}", userId);
+            throw;
+        }
 
         return await GetUserProfileAsync(userId) ??
                throw new InvalidOperationException("Failed to retrieve updated profile");

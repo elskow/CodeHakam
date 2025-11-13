@@ -86,7 +86,7 @@ public class AuthService(
                 logger.LogWarning(emailEx, "Failed to send verification email to {Email}. User can request resend later.", user.Email);
             }
 
-            // Publish event (non-blocking - don't fail registration if event publishing fails)
+            // Publish events to outbox (must succeed for registration to complete)
             try
             {
                 await eventPublisher.PublishUserRegisteredAsync(new UserRegisteredEvent
@@ -96,10 +96,28 @@ public class AuthService(
                     Email = user.Email,
                     Timestamp = DateTime.UtcNow
                 });
+
+                // Publish user.created for cross-service data sync
+                await eventPublisher.PublishUserCreatedAsync(new UserCreatedEvent
+                {
+                    UserId = user.Id,
+                    Username = user.UserName ?? string.Empty,
+                    DisplayName = user.FullName ?? user.UserName ?? string.Empty,
+                    Email = user.Email ?? string.Empty,
+                    AvatarUrl = user.AvatarUrl,
+                    CreatedAt = user.CreatedAt
+                });
+
+                // Save outbox events to database
+                await context.SaveChangesAsync();
+                logger.LogInformation("Outbox events saved for user {Username}", user.UserName);
             }
             catch (Exception eventEx)
             {
-                logger.LogWarning(eventEx, "Failed to publish UserRegistered event for {Username}", user.UserName);
+                logger.LogError(eventEx, "Failed to save outbox events for {Username}", user.UserName);
+                // Roll back user creation if event publishing fails
+                await userManager.DeleteAsync(user);
+                return (false, null, "Registration failed - could not queue notification events");
             }
 
             logger.LogInformation("User {Username} registered successfully", user.UserName);
@@ -179,9 +197,8 @@ public class AuthService(
 
             // Update last login
             user.LastLoginAt = DateTime.UtcNow;
-            await context.SaveChangesAsync();
 
-            // Publish event (non-blocking)
+            // Publish event to outbox
             try
             {
                 await eventPublisher.PublishUserLoggedInAsync(new UserLoggedInEvent
@@ -190,10 +207,14 @@ public class AuthService(
                     IpAddress = ipAddress,
                     Timestamp = DateTime.UtcNow
                 });
+
+                // Save login updates and outbox events atomically
+                await context.SaveChangesAsync();
             }
             catch (Exception eventEx)
             {
-                logger.LogWarning(eventEx, "Failed to publish UserLoggedIn event for {Username}", user.UserName);
+                logger.LogError(eventEx, "Failed to save login or outbox events for {Username}", user.UserName);
+                throw;
             }
 
             logger.LogInformation("User {Username} logged in successfully", user.UserName);

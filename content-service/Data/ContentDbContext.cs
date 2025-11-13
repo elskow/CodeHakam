@@ -12,6 +12,8 @@ public class ContentDbContext(DbContextOptions<ContentDbContext> options) : DbCo
     public DbSet<DiscussionComment> DiscussionComments { get; set; }
     public DbSet<ProblemTag> ProblemTags { get; set; }
     public DbSet<ProblemList> ProblemLists { get; set; }
+    public DbSet<UserProfile> UserProfiles { get; set; }
+    public DbSet<ProcessedEvent> ProcessedEvents { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -26,6 +28,7 @@ public class ContentDbContext(DbContextOptions<ContentDbContext> options) : DbCo
         ConfigureDiscussionComment(modelBuilder);
         ConfigureProblemTag(modelBuilder);
         ConfigureProblemList(modelBuilder);
+        ConfigureUserProfile(modelBuilder);
     }
 
     private static void ConfigureProblem(ModelBuilder modelBuilder)
@@ -480,6 +483,49 @@ public class ContentDbContext(DbContextOptions<ContentDbContext> options) : DbCo
 
             entity.HasIndex(pl => pl.IsPublic)
                 .HasDatabaseName("ix_problem_lists_is_public");
+        });
+    }
+
+    private static void ConfigureUserProfile(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<UserProfile>(entity =>
+        {
+            entity.ToTable("user_profiles");
+            entity.HasKey(up => up.UserId);
+
+            entity.Property(up => up.UserId)
+                .HasColumnName("user_id")
+                .IsRequired()
+                .ValueGeneratedNever();
+
+            entity.Property(up => up.Username)
+                .HasColumnName("username")
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(up => up.DisplayName)
+                .HasColumnName("display_name")
+                .HasMaxLength(100)
+                .IsRequired();
+
+            entity.Property(up => up.Email)
+                .HasColumnName("email")
+                .HasMaxLength(255)
+                .IsRequired();
+
+            entity.Property(up => up.AvatarUrl)
+                .HasColumnName("avatar_url")
+                .HasMaxLength(500);
+
+            entity.Property(up => up.UpdatedAt)
+                .HasColumnName("updated_at")
+                .IsRequired();
+
+            entity.HasIndex(up => up.Username)
+                .HasDatabaseName("ix_user_profiles_username");
+
+            entity.HasIndex(up => up.UpdatedAt)
+                .HasDatabaseName("ix_user_profiles_updated_at");
         });
     }
 }

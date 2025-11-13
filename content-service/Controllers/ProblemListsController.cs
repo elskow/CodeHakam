@@ -1,3 +1,4 @@
+using ContentService.DTOs;
 using ContentService.DTOs.Requests;
 using ContentService.DTOs.Responses;
 using ContentService.Models;
@@ -20,7 +21,7 @@ public class ProblemListsController(
     /// </summary>
     [HttpGet]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(PagedResponse<ProblemListResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<PagedResponse<ProblemListResponse>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPublicLists(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
@@ -38,7 +39,7 @@ public class ProblemListsController(
                 TotalCount = totalCount
             };
 
-            return Ok(response);
+            return Ok(ApiResponse<PagedResponse<ProblemListResponse>>.SuccessResponse(response));
         }
         catch (Exception ex)
         {
@@ -51,7 +52,7 @@ public class ProblemListsController(
     /// </summary>
     [HttpGet("user/{userId}")]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(List<ProblemListResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<List<ProblemListResponse>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetUserLists(long userId)
     {
         try
@@ -74,7 +75,7 @@ public class ProblemListsController(
 
             var response = lists.Select(MapToProblemListResponse).ToList();
 
-            return Ok(response);
+            return Ok(ApiResponse<List<ProblemListResponse>>.SuccessResponse(response));
         }
         catch (Exception ex)
         {
@@ -87,8 +88,8 @@ public class ProblemListsController(
     /// </summary>
     [HttpGet("me")]
     [Authorize]
-    [ProducesResponseType(typeof(List<ProblemListResponse>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse<List<ProblemListResponse>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetMyLists()
     {
         try
@@ -97,7 +98,7 @@ public class ProblemListsController(
             var lists = await problemListService.GetListsByOwnerAsync(userId);
             var response = lists.Select(MapToProblemListResponse).ToList();
 
-            return Ok(response);
+            return Ok(ApiResponse<List<ProblemListResponse>>.SuccessResponse(response));
         }
         catch (Exception ex)
         {
@@ -110,17 +111,16 @@ public class ProblemListsController(
     /// </summary>
     [HttpGet("{id}")]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(ProblemListResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> GetList(long id)
+    [ProducesResponseType(typeof(ApiResponse<ProblemListResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetProblemList(long id)
     {
         try
         {
             var list = await problemListService.GetListAsync(id);
             if (list == null)
             {
-                return NotFound(new { error = "Problem list not found." });
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem list not found."));
             }
 
             // Check visibility
@@ -138,7 +138,7 @@ public class ProblemListsController(
                 }
             }
 
-            return Ok(MapToProblemListResponseWithProblems(list));
+            return Ok(ApiResponse<ProblemListResponse>.SuccessResponse(MapToProblemListResponseWithProblems(list)));
         }
         catch (Exception ex)
         {
@@ -151,10 +151,10 @@ public class ProblemListsController(
     /// </summary>
     [HttpPost]
     [Authorize]
-    [ProducesResponseType(typeof(ProblemListResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> CreateList([FromBody] CreateProblemListRequest request)
+    [ProducesResponseType(typeof(ApiResponse<ProblemListResponse>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> CreateProblemList([FromBody] CreateProblemListRequest request)
     {
         try
         {
@@ -182,9 +182,11 @@ public class ProblemListsController(
                 list.Id, userId, request.ProblemIds.Count);
 
             return CreatedAtAction(
-                nameof(GetList),
+                nameof(GetProblemList),
                 new { id = list.Id },
-                MapToProblemListResponse(list));
+                ApiResponse<ProblemListResponse>.SuccessResponse(
+                    MapToProblemListResponse(list),
+                    "Problem list created successfully"));
         }
         catch (Exception ex)
         {
@@ -197,12 +199,11 @@ public class ProblemListsController(
     /// </summary>
     [HttpPut("{id}")]
     [Authorize]
-    [ProducesResponseType(typeof(ProblemListResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> UpdateList(long id, [FromBody] CreateProblemListRequest request)
+    [ProducesResponseType(typeof(ApiResponse<ProblemListResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateProblemList(long id, [FromBody] CreateProblemListRequest request)
     {
         try
         {
@@ -229,7 +230,9 @@ public class ProblemListsController(
 
             logger.LogInformation("Problem list {ListId} updated by user {UserId}", id, userId);
 
-            return Ok(MapToProblemListResponse(list));
+            return Ok(ApiResponse<ProblemListResponse>.SuccessResponse(
+                MapToProblemListResponse(list),
+                "Problem list updated successfully"));
         }
         catch (Exception ex)
         {
@@ -242,11 +245,10 @@ public class ProblemListsController(
     /// </summary>
     [HttpDelete("{id}")]
     [Authorize]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> DeleteList(long id)
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteProblemList(long id)
     {
         try
         {
@@ -268,7 +270,7 @@ public class ProblemListsController(
 
             logger.LogInformation("Problem list {ListId} deleted by user {UserId}", id, userId);
 
-            return NoContent();
+            return Ok(ApiResponse<object>.SuccessResponse(new { id }, "Problem list deleted successfully"));
         }
         catch (Exception ex)
         {
@@ -281,11 +283,10 @@ public class ProblemListsController(
     /// </summary>
     [HttpPost("{id}/problems/{problemId}")]
     [Authorize]
-    [ProducesResponseType(typeof(ProblemListResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<ProblemListResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> AddProblemToList(long id, long problemId)
     {
         try
@@ -318,7 +319,9 @@ public class ProblemListsController(
                 problemId, id, userId);
 
             var updatedList = await problemListService.GetListAsync(id);
-            return Ok(MapToProblemListResponseWithProblems(updatedList!));
+            return Ok(ApiResponse<ProblemListResponse>.SuccessResponse(
+                MapToProblemListResponseWithProblems(updatedList!),
+                "Problem added to list successfully"));
         }
         catch (Exception ex)
         {
@@ -331,10 +334,9 @@ public class ProblemListsController(
     /// </summary>
     [HttpDelete("{id}/problems/{problemId}")]
     [Authorize]
-    [ProducesResponseType(typeof(ProblemListResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<ProblemListResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> RemoveProblemFromList(long id, long problemId)
     {
         try
@@ -360,7 +362,9 @@ public class ProblemListsController(
                 problemId, id, userId);
 
             var updatedList = await problemListService.GetListAsync(id);
-            return Ok(MapToProblemListResponseWithProblems(updatedList!));
+            return Ok(ApiResponse<ProblemListResponse>.SuccessResponse(
+                MapToProblemListResponseWithProblems(updatedList!),
+                "Problem removed from list successfully"));
         }
         catch (Exception ex)
         {

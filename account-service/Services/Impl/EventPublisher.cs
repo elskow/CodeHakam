@@ -61,6 +61,21 @@ public class EventPublisher : IEventPublisher, IDisposable
         await PublishEventAsync("user.registered", eventData);
     }
 
+    public async Task PublishUserCreatedAsync(UserCreatedEvent eventData)
+    {
+        await PublishEventAsync("user.created", eventData);
+    }
+
+    public async Task PublishUserUpdatedAsync(UserUpdatedEvent eventData)
+    {
+        await PublishEventAsync("user.updated", eventData);
+    }
+
+    public async Task PublishUserDeletedAsync(UserDeletedEvent eventData)
+    {
+        await PublishEventAsync("user.deleted", eventData);
+    }
+
     public async Task PublishUserLoggedInAsync(UserLoggedInEvent eventData)
     {
         await PublishEventAsync("user.logged_in", eventData);
@@ -172,6 +187,33 @@ public record EventEnvelope<T>
     public string EventId { get; init; } = string.Empty;
     public T Data { get; init; } = default!;
     public DateTime Timestamp { get; init; }
+}
+
+// User lifecycle events for cross-service data synchronization
+public record UserCreatedEvent
+{
+    public long UserId { get; init; }
+    public string Username { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string Email { get; init; } = string.Empty;
+    public string? AvatarUrl { get; init; }
+    public DateTime CreatedAt { get; init; }
+}
+
+public record UserUpdatedEvent
+{
+    public long UserId { get; init; }
+    public string Username { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string Email { get; init; } = string.Empty;
+    public string? AvatarUrl { get; init; }
+    public DateTime UpdatedAt { get; init; }
+}
+
+public record UserDeletedEvent
+{
+    public long UserId { get; init; }
+    public DateTime DeletedAt { get; init; }
 }
 
 // Additional event types

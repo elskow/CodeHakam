@@ -13,6 +13,8 @@ public class ProblemResponse
     public int TimeLimit { get; set; }
     public int MemoryLimit { get; set; }
     public long AuthorId { get; set; }
+    public string? AuthorName { get; set; }
+    public string? AuthorAvatar { get; set; }
     public string? Visibility { get; set; }
     public string? HintText { get; set; }
     public List<string> Tags { get; set; } = new();

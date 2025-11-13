@@ -1,6 +1,8 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+using AccountService.BackgroundServices;
 using AccountService.Configuration;
 using AccountService.Data;
 using AccountService.DTOs;
@@ -195,9 +197,10 @@ public class Program
         builder.Services.AddScoped<IEmailService, EmailService>();
         builder.Services.AddScoped<IUserService, UserService>();
         builder.Services.AddScoped<IAdminService, AdminService>();
-        builder.Services.AddSingleton<IEventPublisher, EventPublisher>();
+        builder.Services.AddScoped<IEventPublisher, OutboxEventPublisherService>();
         builder.Services.AddSingleton<RedisHealthCheck>();
         builder.Services.AddHostedService<PolicySyncService>();
+        builder.Services.AddHostedService<OutboxEventPublisher>();
 
         builder.Services.AddControllers()
             .ConfigureApiBehaviorOptions(options =>
@@ -342,15 +345,34 @@ public class LowercaseDocumentFilter : IDocumentFilter
 {
     public void Apply(OpenApiDocument swaggerDoc, DocumentFilterContext context)
     {
-        var paths = swaggerDoc.Paths.ToDictionary(
-            entry => entry.Key.ToLowerInvariant(),
+        var pathsToModify = swaggerDoc.Paths.ToDictionary(
+            entry => LowercasePathPreservingParameters(entry.Key),
             entry => entry.Value
         );
 
         swaggerDoc.Paths.Clear();
-        foreach (var path in paths)
+        foreach (var path in pathsToModify)
         {
             swaggerDoc.Paths.Add(path.Key, path.Value);
         }
+    }
+
+    private static string LowercasePathPreservingParameters(string path)
+    {
+        var regex = new Regex(@"\{[^}]+\}");
+        var parameters = regex.Matches(path);
+        var result = path.ToLowerInvariant();
+
+        foreach (Match match in parameters)
+        {
+            var original = match.Value;
+            var lowercased = original.ToLowerInvariant();
+            if (original != lowercased)
+            {
+                result = result.Replace(lowercased, original);
+            }
+        }
+
+        return result;
     }
 }

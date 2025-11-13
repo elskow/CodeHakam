@@ -1,9 +1,13 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using ContentService.Configuration;
 using ContentService.Data;
+using ContentService.Middleware;
 using ContentService.Repositories.Impl;
 using ContentService.Repositories.Interfaces;
+using ContentService.Services.BackgroundServices;
 using ContentService.Services.Implementations;
 using ContentService.Services.Interfaces;
 using ContentService.Validators;
@@ -14,9 +18,10 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using Minio;
 using Serilog;
-using System.Text.Json;
+using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace ContentService;
 
@@ -50,6 +55,8 @@ public class Program
                 Version = "v1",
                 Description = "Content Service API for managing problems, test cases, editorials, discussions, and problem lists"
             });
+
+            c.DocumentFilter<LowercaseDocumentFilter>();
         });
 
         // Configure FluentValidation
@@ -91,9 +98,9 @@ public class Program
         });
 
         // Configure JWT Authentication
-        var jwtIssuer = builder.Configuration["Jwt:ValidIssuer"] ?? "CodeHakamAuthService";
-        var jwtAudience = builder.Configuration["Jwt:ValidAudience"] ?? "CodeHakamContentService";
-        var jwtSecretKey = builder.Configuration["Jwt:SecretKey"] ?? "your-secret-key-here-min-32-chars-long-please";
+        var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "codehakam";
+        var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? "codehakam-api";
+        var jwtSecretKey = builder.Configuration["JwtSettings:SecretKey"] ?? "your-secret-key-here-minimum-32-characters-long-for-security";
 
         builder.Services.AddAuthentication(options =>
             {
@@ -102,6 +109,10 @@ public class Program
             })
             .AddJwtBearer(options =>
             {
+                options.MapInboundClaims = false;
+
+                var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecretKey));
+
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,
@@ -110,8 +121,15 @@ public class Program
                     ValidateIssuerSigningKey = true,
                     ValidIssuer = jwtIssuer,
                     ValidAudience = jwtAudience,
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecretKey))
+                    IssuerSigningKey = key,
+                    ClockSkew = TimeSpan.Zero
                 };
+
+                options.SecurityTokenValidators.Clear();
+                options.SecurityTokenValidators.Add(new JwtSecurityTokenHandler
+                {
+                    MapInboundClaims = false
+                });
             });
 
         builder.Services.AddAuthorization();
@@ -145,6 +163,9 @@ public class Program
         builder.Services.AddSingleton<IStorageService, MinIoStorageService>();
         builder.Services.AddSingleton<IEventPublisher, RabbitMqEventPublisher>();
 
+        // Register Background Services
+        builder.Services.AddHostedService<UserEventConsumer>();
+
         // Configure HttpClient
         builder.Services.AddHttpClient();
 
@@ -164,12 +185,13 @@ public class Program
         }
         else
         {
-            app.UseExceptionHandler("/error");
             app.UseHsts();
         }
 
         app.UseHttpsRedirection();
         app.UseSerilogRequestLogging();
+
+        app.UseMiddleware<ExceptionHandlingMiddleware>();
         app.UseCors("AllowAll");
         app.UseAuthentication();
         app.UseAuthorization();
@@ -257,6 +279,42 @@ public class Program
         finally
         {
             Log.CloseAndFlush();
+        }
+    }
+
+    public class LowercaseDocumentFilter : IDocumentFilter
+    {
+        public void Apply(OpenApiDocument swaggerDoc, DocumentFilterContext context)
+        {
+            var pathsToModify = swaggerDoc.Paths.ToDictionary(
+                entry => LowercasePathPreservingParameters(entry.Key),
+                entry => entry.Value
+            );
+
+            swaggerDoc.Paths.Clear();
+            foreach (var path in pathsToModify)
+            {
+                swaggerDoc.Paths.Add(path.Key, path.Value);
+            }
+        }
+
+        private static string LowercasePathPreservingParameters(string path)
+        {
+            var regex = new Regex(@"\{[^}]+\}");
+            var parameters = regex.Matches(path);
+            var result = path.ToLowerInvariant();
+
+            foreach (Match match in parameters)
+            {
+                var original = match.Value;
+                var lowercased = original.ToLowerInvariant();
+                if (original != lowercased)
+                {
+                    result = result.Replace(lowercased, original);
+                }
+            }
+
+            return result;
         }
     }
 }

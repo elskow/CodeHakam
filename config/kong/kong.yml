@@ -1,0 +1,212 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  # ==========================================================================
+  # Account Service
+  # ==========================================================================
+  - name: account-service
+    url: http://host.docker.internal:3001
+    routes:
+      - name: account-routes
+        paths:
+          - /api/auth
+          - /api/users
+          - /api/admin
+        strip_path: false
+    plugins:
+      # JWT Authentication
+      - name: jwt
+        config:
+          secret_is_base64: false
+          claims_to_verify:
+            - exp
+          key_claim_name: iss
+          uri_param_names:
+            - jwt
+
+      # Rate Limiting
+      - name: rate-limiting
+        config:
+          minute: 100
+          hour: 1000
+          policy: local
+
+      # Request Transformer - Forward user claims as headers
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - X-User-Id:$(jwt_claims.sub)
+              - X-User-Roles:$(jwt_claims.roles)
+              - X-User-Email:$(jwt_claims.email)
+              - X-Gateway-Signature:$(hmac_signature)
+
+  # ==========================================================================
+  # Content Service
+  # ==========================================================================
+  - name: content-service
+    url: http://host.docker.internal:3002
+    routes:
+      - name: content-routes
+        paths:
+          - /api/problems
+          - /api/testcases
+          - /api/editorials
+          - /api/discussions
+          - /api/problemlists
+        strip_path: false
+    plugins:
+      # JWT Authentication
+      - name: jwt
+        config:
+          secret_is_base64: false
+          claims_to_verify:
+            - exp
+          key_claim_name: iss
+
+      # Rate Limiting
+      - name: rate-limiting
+        config:
+          minute: 200
+          hour: 2000
+          policy: local
+
+      # Request Transformer - Forward user claims as headers
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - X-User-Id:$(jwt_claims.sub)
+              - X-User-Roles:$(jwt_claims.roles)
+              - X-User-Email:$(jwt_claims.email)
+              - X-Gateway-Signature:$(hmac_signature)
+
+      # CORS
+      - name: cors
+        config:
+          origins:
+            - http://localhost:3000
+            - http://localhost:5173
+          methods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Authorization
+            - Content-Type
+            - X-User-Id
+          exposed_headers:
+            - X-Auth-Token
+          credentials: true
+          max_age: 3600
+
+  # ==========================================================================
+  # Execution Service
+  # ==========================================================================
+  - name: execution-service
+    url: http://host.docker.internal:3003
+    routes:
+      - name: execution-routes
+        paths:
+          - /api/submissions
+          - /api/judge
+        strip_path: false
+    plugins:
+      # JWT Authentication
+      - name: jwt
+        config:
+          secret_is_base64: false
+          claims_to_verify:
+            - exp
+          key_claim_name: iss
+
+      # Rate Limiting - Stricter for submissions
+      - name: rate-limiting
+        config:
+          minute: 30
+          hour: 500
+          policy: local
+
+      # Request Transformer
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - X-User-Id:$(jwt_claims.sub)
+              - X-User-Roles:$(jwt_claims.roles)
+              - X-User-Email:$(jwt_claims.email)
+              - X-Gateway-Signature:$(hmac_signature)
+
+  # ==========================================================================
+  # Contest Service
+  # ==========================================================================
+  - name: contest-service
+    url: http://host.docker.internal:3004
+    routes:
+      - name: contest-routes
+        paths:
+          - /api/contests
+          - /api/leaderboard
+        strip_path: false
+    plugins:
+      # JWT Authentication
+      - name: jwt
+        config:
+          secret_is_base64: false
+          claims_to_verify:
+            - exp
+          key_claim_name: iss
+
+      # Rate Limiting
+      - name: rate-limiting
+        config:
+          minute: 100
+          hour: 1000
+          policy: local
+
+      # Request Transformer
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - X-User-Id:$(jwt_claims.sub)
+              - X-User-Roles:$(jwt_claims.roles)
+              - X-User-Email:$(jwt_claims.email)
+              - X-Gateway-Signature:$(hmac_signature)
+
+# ==========================================================================
+# Consumers (JWT Credentials)
+# ==========================================================================
+consumers:
+  - username: codehakam-system
+    jwt_secrets:
+      - key: codehakam
+        secret: your-secret-key-min-32-characters-long-for-security
+        algorithm: HS256
+
+# ==========================================================================
+# Global Plugins
+# ==========================================================================
+plugins:
+  # Correlation ID for tracing
+  - name: correlation-id
+    config:
+      header_name: X-Request-Id
+      generator: uuid
+      echo_downstream: true
+
+  # Request/Response Logging
+  - name: file-log
+    config:
+      path: /tmp/kong-access.log
+      reopen: true
+
+  # Prometheus Metrics
+  - name: prometheus
+    config:
+      per_consumer: true

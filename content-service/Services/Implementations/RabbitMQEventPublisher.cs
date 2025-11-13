@@ -23,6 +23,7 @@ public class RabbitMqEventPublisher : IEventPublisher, IDisposable
         var port = int.Parse(configuration["RabbitMQ:Port"] ?? "5672");
         var username = configuration["RabbitMQ:Username"] ?? "guest";
         var password = configuration["RabbitMQ:Password"] ?? "guest";
+        var virtualHost = configuration["RabbitMQ:VirtualHost"] ?? "/";
         _exchangeName = configuration["RabbitMQ:ExchangeName"] ?? "codehakam.events";
 
         var factory = new ConnectionFactory
@@ -31,6 +32,7 @@ public class RabbitMqEventPublisher : IEventPublisher, IDisposable
             Port = port,
             UserName = username,
             Password = password,
+            VirtualHost = virtualHost,
             AutomaticRecoveryEnabled = true,
             NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
         };

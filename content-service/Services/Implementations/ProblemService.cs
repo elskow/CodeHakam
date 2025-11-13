@@ -1,17 +1,24 @@
 using System.Text.RegularExpressions;
+using ContentService.Data;
 using ContentService.Enums;
 using ContentService.Models;
 using ContentService.Repositories.Interfaces;
 using ContentService.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
 
 namespace ContentService.Services.Implementations;
 
 public class ProblemService(
     IProblemRepository problemRepository,
+    ContentDbContext dbContext,
     IEventPublisher eventPublisher,
     ILogger<ProblemService> logger)
     : IProblemService
 {
+    private async Task<UserProfile?> GetUserProfileAsync(long userId)
+    {
+        return await dbContext.UserProfiles.FindAsync(userId);
+    }
     public async Task<Problem?> GetProblemAsync(long id, CancellationToken cancellationToken = default)
     {
         return await problemRepository.GetByIdAsync(id, includeRelated: true);
@@ -87,6 +94,7 @@ public class ProblemService(
             AuthorId = authorId,
             Visibility = visibility,
             HintText = hintText,
+            IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
