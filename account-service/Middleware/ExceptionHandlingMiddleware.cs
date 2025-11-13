@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using AccountService.DTOs;
-
+using AccountService.DTOs.Common;
 namespace AccountService.Middleware;
 
 public class ExceptionHandlingMiddleware

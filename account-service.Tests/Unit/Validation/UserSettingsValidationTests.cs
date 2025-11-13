@@ -1,5 +1,5 @@
 using AccountService.DTOs;
-using AccountService.Validation;
+using AccountService.Validators;
 using FluentAssertions;
 using System.ComponentModel.DataAnnotations;
 

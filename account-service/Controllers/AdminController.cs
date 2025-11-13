@@ -1,8 +1,10 @@
 using System.Security.Claims;
 using AccountService.Authorization;
 using AccountService.DTOs;
+using AccountService.DTOs.Common;
+using AccountService.Extensions;
 using AccountService.Models;
-using AccountService.Services;
+using AccountService.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -41,7 +43,7 @@ public class AdminController(IAdminService adminService, ILogger<AdminController
         {
             return BadRequest(ApiResponse<object>.ErrorResponse("Invalid search parameters", ModelState.ToDictionary(
                 kvp => kvp.Key,
-                kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? Array.Empty<string>()
+                kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? []
             )));
         }
 
@@ -81,7 +83,7 @@ public class AdminController(IAdminService adminService, ILogger<AdminController
         {
             return BadRequest(ApiResponse<object>.ErrorResponse("Validation failed", ModelState.ToDictionary(
                 kvp => kvp.Key,
-                kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? Array.Empty<string>()
+                kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? []
             )));
         }
 
@@ -133,7 +135,7 @@ public class AdminController(IAdminService adminService, ILogger<AdminController
         {
             return BadRequest(ApiResponse<object>.ErrorResponse("Validation failed", ModelState.ToDictionary(
                 kvp => kvp.Key,
-                kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? Array.Empty<string>()
+                kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? []
             )));
         }
 

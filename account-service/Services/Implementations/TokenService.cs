@@ -9,9 +9,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
-namespace AccountService.Services.Impl;
+using AccountService.Services.Interfaces;
+namespace AccountService.Services.Implementations;
 
-public class TokenService(
+public sealed class TokenService(
     IOptions<JwtSettings> jwtSettings,
     ApplicationDbContext context,
     ILogger<TokenService> logger)
@@ -45,9 +46,9 @@ public class TokenService(
         };
 
         var token = new JwtSecurityToken(
-            issuer: _jwtSettings.Issuer,
-            audience: _jwtSettings.Audience,
-            claims: claims,
+            _jwtSettings.Issuer,
+            _jwtSettings.Audience,
+            claims,
             expires: DateTime.UtcNow.AddMinutes(_jwtSettings.ExpiryMinutes),
             signingCredentials: credentials
         );

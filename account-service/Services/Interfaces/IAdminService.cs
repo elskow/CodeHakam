@@ -1,7 +1,8 @@
 using AccountService.DTOs;
+using AccountService.DTOs.Common;
 using AccountService.Models;
 
-namespace AccountService.Services;
+namespace AccountService.Services.Interfaces;
 
 public interface IAdminService
 {
@@ -69,16 +70,4 @@ public interface IAdminService
     /// Get system statistics
     /// </summary>
     Task<SystemStatisticsDto> GetSystemStatisticsAsync();
-}
-
-public record SystemStatisticsDto
-{
-    public int TotalUsers { get; init; }
-    public int ActiveUsers { get; init; }
-    public int BannedUsers { get; init; }
-    public int VerifiedUsers { get; init; }
-    public int TotalProblems { get; init; }
-    public int TotalSubmissions { get; init; }
-    public int TotalContests { get; init; }
-    public DateTime? LastUserRegistration { get; init; }
 }

@@ -1,9 +1,8 @@
 using System.ComponentModel.DataAnnotations;
-using AccountService.Validation;
+using AccountService.Validators;
 
 namespace AccountService.DTOs;
 
-// User Profile
 public record UserProfileDto
 {
     public long Id { get; init; }
@@ -22,7 +21,6 @@ public record UserProfileDto
     public UserStatisticsDto? Statistics { get; init; }
 }
 
-// Update Profile
 public record UpdateProfileRequest
 {
     [StringLength(100)]
@@ -42,7 +40,6 @@ public record UpdateProfileRequest
     public string? AvatarUrl { get; init; }
 }
 
-// User Statistics
 public record UserStatisticsDto
 {
     public int ProblemsSolved { get; init; }
@@ -60,7 +57,6 @@ public record UserStatisticsDto
     public int? CountryRank { get; init; }
 }
 
-// Rating History
 public record RatingHistoryDto
 {
     public long Id { get; init; }
@@ -73,7 +69,6 @@ public record RatingHistoryDto
     public DateTime ChangedAt { get; init; }
 }
 
-// Achievement
 public record AchievementDto
 {
     public long Id { get; init; }
@@ -85,7 +80,6 @@ public record AchievementDto
     public DateTime EarnedAt { get; init; }
 }
 
-// User Settings
 public record UserSettingsDto
 {
     public string LanguagePreference { get; init; } = "en";
@@ -122,7 +116,6 @@ public record UpdateUserSettingsRequest
     public string? Timezone { get; init; }
 }
 
-// User List (for admin)
 public record UserListItemDto
 {
     public long Id { get; init; }
@@ -137,19 +130,6 @@ public record UserListItemDto
     public List<string> Roles { get; init; } = new();
 }
 
-// Paginated Response
-public record PaginatedResponse<T>
-{
-    public List<T> Items { get; init; } = new();
-    public int Page { get; init; }
-    public int PageSize { get; init; }
-    public int TotalCount { get; init; }
-    public int TotalPages { get; init; }
-    public bool HasPreviousPage { get; init; }
-    public bool HasNextPage { get; init; }
-}
-
-// User Search/Filter
 public record UserSearchRequest
 {
     [StringLength(100, ErrorMessage = "Search term cannot exceed 100 characters")]
@@ -179,45 +159,4 @@ public record UserSearchRequest
 
     [Range(1, 100)]
     public int PageSize { get; init; } = 20;
-
-    // Helper method to normalize empty strings to null and sanitize input
-    public UserSearchRequest Normalize()
-    {
-        return this with
-        {
-            SearchTerm = SanitizeSearchTerm(SearchTerm),
-            Country = string.IsNullOrWhiteSpace(Country) ? null : Country.Trim().ToUpperInvariant(),
-            SortBy = string.IsNullOrWhiteSpace(SortBy) ? "rating" : SortBy.Trim().ToLowerInvariant(),
-            SortOrder = string.IsNullOrWhiteSpace(SortOrder) ? "desc" : SortOrder.Trim().ToLowerInvariant()
-        };
-    }
-
-    private static string? SanitizeSearchTerm(string? searchTerm)
-    {
-        if (string.IsNullOrWhiteSpace(searchTerm))
-            return null;
-
-        // Trim and remove control characters (including null bytes)
-        var sanitized = new string(searchTerm
-            .Trim()
-            .Where(c => !char.IsControl(c))
-            .ToArray());
-
-        return string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
-    }
-}
-
-// Ban User
-public record BanUserRequest
-{
-    [Required]
-    [StringLength(500)]
-    public string Reason { get; init; } = string.Empty;
-}
-
-// Assign Role
-public record AssignRoleRequest
-{
-    [Required]
-    public long RoleId { get; init; }
 }

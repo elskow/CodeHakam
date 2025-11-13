@@ -1,6 +1,8 @@
+using AccountService.Constants;
 using Casbin;
 
-namespace AccountService.Services.Impl;
+using AccountService.Services.Interfaces;
+namespace AccountService.Services.Implementations;
 
 public sealed class PolicySyncService(
     IServiceProvider serviceProvider,
@@ -17,9 +19,9 @@ public sealed class PolicySyncService(
 
         _timer = new Timer(
             SyncPolicies,
-            null,
-            TimeSpan.FromMinutes(5),
-            TimeSpan.FromMinutes(5));
+            state: null,
+            TimeSpan.FromMinutes(ApplicationConstants.Intervals.PolicySyncMinutes),
+            TimeSpan.FromMinutes(ApplicationConstants.Intervals.PolicySyncMinutes));
 
         logger.LogInformation("Policy sync service started");
     }
@@ -28,7 +30,7 @@ public sealed class PolicySyncService(
     {
         logger.LogInformation("Policy sync service stopping");
 
-        _timer?.Change(Timeout.Infinite, 0);
+        _timer?.Change(Timeout.Infinite, period: 0);
         _timer?.Dispose();
 
         logger.LogInformation("Policy sync service stopped");

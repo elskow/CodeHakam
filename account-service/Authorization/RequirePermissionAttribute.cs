@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using AccountService.DTOs;
+using AccountService.DTOs.Common;
 using Casbin;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;

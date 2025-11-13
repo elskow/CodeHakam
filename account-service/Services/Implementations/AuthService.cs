@@ -1,12 +1,16 @@
+using AccountService.Constants;
 using AccountService.Data;
 using AccountService.DTOs;
+using AccountService.DTOs.Common;
+using AccountService.Events;
 using AccountService.Models;
+using AccountService.Services.Interfaces;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
-namespace AccountService.Services.Impl;
+namespace AccountService.Services.Implementations;
 
-public class AuthService(
+public sealed class AuthService(
     ApplicationDbContext context,
     UserManager<User> userManager,
     SignInManager<User> signInManager,
@@ -17,7 +21,8 @@ public class AuthService(
     : IAuthService
 {
     public async Task<(bool Success, RegisterResponse? Response, string? Error)> RegisterAsync(
-        RegisterRequest request, string? ipAddress = null)
+        RegisterRequest request,
+        string? ipAddress = null)
     {
         try
         {
@@ -41,7 +46,7 @@ public class AuthService(
                 FullName = request.FullName,
                 IsVerified = false,
                 CreatedAt = DateTime.UtcNow,
-                Rating = 1500
+                Rating = ApplicationConstants.Defaults.UserRating
             };
 
             var result = await userManager.CreateAsync(user, request.Password);
@@ -52,7 +57,7 @@ public class AuthService(
             }
 
             // Assign default role
-            var defaultRole = await context.Roles.FirstOrDefaultAsync(r => r.Name == "user");
+            var defaultRole = await context.Roles.FirstOrDefaultAsync(r => r.Name == ApplicationConstants.Roles.DefaultRole);
             if (defaultRole != null)
             {
                 var userRole = new UserRole
@@ -73,7 +78,7 @@ public class AuthService(
             // Generate email verification token
             var verificationToken = await tokenService.GenerateEmailVerificationTokenAsync();
             user.VerificationToken = tokenService.HashToken(verificationToken);
-            user.VerificationTokenExpiry = DateTime.UtcNow.AddHours(24);
+            user.VerificationTokenExpiry = DateTime.UtcNow.AddHours(ApplicationConstants.TokenExpiry.EmailVerificationHours);
             await userManager.UpdateAsync(user);
 
             // Send verification email (non-blocking - don't fail registration if email fails)
@@ -139,7 +144,8 @@ public class AuthService(
     }
 
     public async Task<(bool Success, LoginResponse? Response, string? Error)> LoginAsync(
-        LoginRequest request, string? ipAddress = null)
+        LoginRequest request,
+        string? ipAddress = null)
     {
         try
         {
@@ -189,7 +195,7 @@ public class AuthService(
             {
                 UserId = user.Id,
                 TokenHash = tokenService.HashToken(refreshToken),
-                ExpiresAt = DateTime.UtcNow.AddDays(7),
+                ExpiresAt = DateTime.UtcNow.AddDays(ApplicationConstants.TokenExpiry.RefreshTokenDays),
                 CreatedAt = DateTime.UtcNow,
                 CreatedByIp = ipAddress
             };
@@ -219,12 +225,12 @@ public class AuthService(
 
             logger.LogInformation("User {Username} logged in successfully", user.UserName);
 
-            var response = new LoginResponse
+            return (true, new LoginResponse
             {
                 AccessToken = accessToken,
                 RefreshToken = refreshToken,
-                ExpiresIn = 3600, // 1 hour
-                User = new UserDto
+                ExpiresIn = ApplicationConstants.Defaults.TokenExpirySeconds,
+                User = new UserAuthDto
                 {
                     Id = user.Id,
                     Username = user.UserName!,
@@ -241,9 +247,7 @@ public class AuthService(
                     LastLoginAt = user.LastLoginAt,
                     Roles = roles
                 }
-            };
-
-            return (true, response, null);
+            }, null);
         }
         catch (Exception ex)
         {
@@ -253,7 +257,8 @@ public class AuthService(
     }
 
     public async Task<(bool Success, RefreshTokenResponse? Response, string? Error)> RefreshTokenAsync(
-        RefreshTokenRequest request, string? ipAddress = null)
+        RefreshTokenRequest request,
+        string? ipAddress = null)
     {
         try
         {
@@ -293,7 +298,7 @@ public class AuthService(
             {
                 UserId = user.Id,
                 TokenHash = tokenService.HashToken(newRefreshToken),
-                ExpiresAt = DateTime.UtcNow.AddDays(7),
+                ExpiresAt = DateTime.UtcNow.AddDays(ApplicationConstants.TokenExpiry.RefreshTokenDays),
                 CreatedAt = DateTime.UtcNow,
                 CreatedByIp = ipAddress
             };
@@ -305,7 +310,7 @@ public class AuthService(
             {
                 AccessToken = newAccessToken,
                 RefreshToken = newRefreshToken,
-                ExpiresIn = 3600
+                ExpiresIn = ApplicationConstants.Defaults.TokenExpirySeconds
             };
 
             return (true, response, null);
@@ -317,7 +322,9 @@ public class AuthService(
         }
     }
 
-    public async Task<(bool Success, string? Error)> LogoutAsync(long userId, string refreshToken,
+    public async Task<(bool Success, string? Error)> LogoutAsync(
+        long userId,
+        string refreshToken,
         string? ipAddress = null)
     {
         try
@@ -399,7 +406,7 @@ public class AuthService(
             // Generate password reset token
             var resetToken = await tokenService.GeneratePasswordResetTokenAsync();
             user.PasswordResetToken = tokenService.HashToken(resetToken);
-            user.PasswordResetTokenExpiry = DateTime.UtcNow.AddHours(1);
+            user.PasswordResetTokenExpiry = DateTime.UtcNow.AddHours(ApplicationConstants.TokenExpiry.PasswordResetHours);
             await userManager.UpdateAsync(user);
 
             // Send password reset email (non-blocking)
@@ -521,27 +528,4 @@ public class AuthService(
             return (false, "An error occurred while changing password");
         }
     }
-}
-
-// Event DTOs
-public record UserRegisteredEvent
-{
-    public long UserId { get; init; }
-    public string Username { get; init; } = string.Empty;
-    public string Email { get; init; } = string.Empty;
-    public DateTime Timestamp { get; init; }
-}
-
-public record UserLoggedInEvent
-{
-    public long UserId { get; init; }
-    public string? IpAddress { get; init; }
-    public DateTime Timestamp { get; init; }
-}
-
-public record PasswordResetRequestedEvent
-{
-    public long UserId { get; init; }
-    public string Email { get; init; } = string.Empty;
-    public DateTime Timestamp { get; init; }
 }

@@ -1,10 +1,11 @@
 using AccountService.Data;
 using AccountService.DTOs;
 using AccountService.Models;
-using AccountService.Services;
-using AccountService.Services.Impl;
+using AccountService.Services.Interfaces;
+using AccountService.Services.Implementations;
 using AccountService.Tests.Helpers;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -13,13 +14,13 @@ namespace AccountService.Tests.Unit.Services;
 
 public class AuthServiceTests : IDisposable
 {
+    private readonly AuthService _authService;
     private readonly ApplicationDbContext _context;
-    private readonly Mock<UserManager<User>> _userManagerMock;
-    private readonly Mock<ITokenService> _tokenServiceMock;
     private readonly Mock<IEmailService> _emailServiceMock;
     private readonly Mock<IEventPublisher> _eventPublisherMock;
     private readonly Mock<ILogger<AuthService>> _loggerMock;
-    private readonly AuthService _authService;
+    private readonly Mock<ITokenService> _tokenServiceMock;
+    private readonly Mock<UserManager<User>> _userManagerMock;
 
     public AuthServiceTests()
     {
@@ -32,7 +33,7 @@ public class AuthServiceTests : IDisposable
 
         var signInManagerMock = new Mock<SignInManager<User>>(
             _userManagerMock.Object,
-            Mock.Of<Microsoft.AspNetCore.Http.IHttpContextAccessor>(),
+            Mock.Of<IHttpContextAccessor>(),
             Mock.Of<IUserClaimsPrincipalFactory<User>>(),
             null!, null!, null!, null!);
 
@@ -51,6 +52,12 @@ public class AuthServiceTests : IDisposable
             _loggerMock.Object);
     }
 
+    public void Dispose()
+    {
+        _context.Database.EnsureDeleted();
+        _context.Dispose();
+    }
+
     [Fact]
     public async Task LogoutAsync_WithValidToken_ShouldRevokeTokenAndReturnSuccess()
     {
@@ -60,8 +67,8 @@ public class AuthServiceTests : IDisposable
         var rawToken = "raw_refresh_token";
         var tokenHash = "valid_token_hash_12345";
         var refreshToken = TestDataBuilder.CreateRefreshToken(
-            userId: user.Id,
-            tokenHash: tokenHash,
+            user.Id,
+            tokenHash,
             expiresAt: DateTime.UtcNow.AddDays(7));
 
         await _context.Users.AddAsync(user);
@@ -119,8 +126,8 @@ public class AuthServiceTests : IDisposable
         await _context.SaveChangesAsync(); // Save user first to get ID
 
         var refreshToken = TestDataBuilder.CreateRefreshToken(
-            userId: user.Id,
-            tokenHash: tokenHash,
+            user.Id,
+            tokenHash,
             expiresAt: DateTime.UtcNow.AddDays(7),
             revokedAt: DateTime.UtcNow.AddHours(-1));
 
@@ -144,8 +151,8 @@ public class AuthServiceTests : IDisposable
         var rawToken = "expired_token";
         var tokenHash = "expired_token_hash";
         var refreshToken = TestDataBuilder.CreateRefreshToken(
-            userId: user.Id,
-            tokenHash: tokenHash,
+            user.Id,
+            tokenHash,
             expiresAt: DateTime.UtcNow.AddDays(-1));
 
         await _context.Users.AddAsync(user);
@@ -172,8 +179,8 @@ public class AuthServiceTests : IDisposable
         var rawToken = "user2_token";
         var tokenHash = "user2_token_hash";
         var refreshToken = TestDataBuilder.CreateRefreshToken(
-            userId: user2.Id,
-            tokenHash: tokenHash,
+            user2.Id,
+            tokenHash,
             expiresAt: DateTime.UtcNow.AddDays(7));
 
         await _context.Users.AddRangeAsync(user1, user2);
@@ -203,8 +210,8 @@ public class AuthServiceTests : IDisposable
         await _context.SaveChangesAsync(); // Save user first to get ID
 
         var oldRefreshToken = TestDataBuilder.CreateRefreshToken(
-            userId: user.Id,
-            tokenHash: oldTokenHash,
+            user.Id,
+            oldTokenHash,
             expiresAt: DateTime.UtcNow.AddDays(7));
         oldRefreshToken.User = user; // Set navigation property
 
@@ -284,8 +291,8 @@ public class AuthServiceTests : IDisposable
         var rawToken = "revoked_token";
         var tokenHash = "revoked_token_hash";
         var refreshToken = TestDataBuilder.CreateRefreshToken(
-            userId: user.Id,
-            tokenHash: tokenHash,
+            user.Id,
+            tokenHash,
             expiresAt: DateTime.UtcNow.AddDays(7),
             revokedAt: DateTime.UtcNow.AddHours(-1));
 
@@ -313,8 +320,8 @@ public class AuthServiceTests : IDisposable
         var rawToken = "expired_token";
         var tokenHash = "expired_token_hash";
         var refreshToken = TestDataBuilder.CreateRefreshToken(
-            userId: user.Id,
-            tokenHash: tokenHash,
+            user.Id,
+            tokenHash,
             expiresAt: DateTime.UtcNow.AddDays(-1));
 
         await _context.Users.AddAsync(user);
@@ -417,15 +424,9 @@ public class AuthServiceTests : IDisposable
             ConfirmPassword = "NewPassword123!"
         };
 
-        var (success, error) = await _authService.ChangePasswordAsync(999, request);
+        var (success, error) = await _authService.ChangePasswordAsync(userId: 999, request);
 
         success.Should().BeFalse();
         error.Should().Be("User not found");
-    }
-
-    public void Dispose()
-    {
-        _context.Database.EnsureDeleted();
-        _context.Dispose();
     }
 }

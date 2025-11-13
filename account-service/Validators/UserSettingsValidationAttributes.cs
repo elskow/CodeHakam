@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using AccountService.Enums;
 
-namespace AccountService.Validation;
+namespace AccountService.Validators;
 
 /// <summary>
 /// Validates that a string value corresponds to a valid Theme enum value (case-insensitive)

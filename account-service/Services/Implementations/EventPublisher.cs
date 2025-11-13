@@ -1,18 +1,21 @@
 using System.Text;
 using System.Text.Json;
 using AccountService.Configuration;
+using AccountService.Constants;
+using AccountService.Events;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 
-namespace AccountService.Services.Impl;
+using AccountService.Services.Interfaces;
+namespace AccountService.Services.Implementations;
 
 public class EventPublisher : IEventPublisher, IDisposable
 {
-    private readonly RabbitMqSettings _settings;
-    private readonly ILogger<EventPublisher> _logger;
-    private IConnection? _connection;
-    private IModel? _channel;
     private readonly Lock _lock = new();
+    private readonly ILogger<EventPublisher> _logger;
+    private readonly RabbitMqSettings _settings;
+    private IModel? _channel;
+    private IConnection? _connection;
 
     public EventPublisher(IOptions<RabbitMqSettings> settings, ILogger<EventPublisher> logger)
     {
@@ -21,38 +24,18 @@ public class EventPublisher : IEventPublisher, IDisposable
         InitializeRabbitMq();
     }
 
-    private void InitializeRabbitMq()
+    public void Dispose()
     {
         try
         {
-            var factory = new ConnectionFactory
-            {
-                HostName = _settings.Host,
-                Port = _settings.Port,
-                UserName = _settings.Username,
-                Password = _settings.Password,
-                VirtualHost = _settings.VirtualHost,
-                AutomaticRecoveryEnabled = true,
-                NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
-            };
-
-            _connection = factory.CreateConnection();
-            _channel = _connection.CreateModel();
-
-            // Declare exchange
-            _channel.ExchangeDeclare(
-                exchange: _settings.ExchangeName,
-                type: ExchangeType.Topic,
-                durable: _settings.Durable,
-                autoDelete: false,
-                arguments: null
-            );
-
-            _logger.LogInformation("RabbitMQ connection established");
+            _channel?.Close();
+            _channel?.Dispose();
+            _connection?.Close();
+            _connection?.Dispose();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize RabbitMQ connection");
+            _logger.LogError(ex, "Error disposing RabbitMQ connection");
         }
     }
 
@@ -106,6 +89,41 @@ public class EventPublisher : IEventPublisher, IDisposable
         await PublishEventAsync("user.banned", eventData);
     }
 
+    private void InitializeRabbitMq()
+    {
+        try
+        {
+            var factory = new ConnectionFactory
+            {
+                HostName = _settings.Host,
+                Port = _settings.Port,
+                UserName = _settings.Username,
+                Password = _settings.Password,
+                VirtualHost = _settings.VirtualHost,
+                AutomaticRecoveryEnabled = true,
+                NetworkRecoveryInterval = TimeSpan.FromSeconds(ApplicationConstants.Intervals.NetworkRecoverySeconds)
+            };
+
+            _connection = factory.CreateConnection();
+            _channel = _connection.CreateModel();
+
+            // Declare exchange
+            _channel.ExchangeDeclare(
+                _settings.ExchangeName,
+                ExchangeType.Topic,
+                _settings.Durable,
+                autoDelete: false,
+                arguments: null
+            );
+
+            _logger.LogInformation("RabbitMQ connection established");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initialize RabbitMQ connection");
+        }
+    }
+
     private Task PublishEventAsync<T>(string routingKey, T eventData)
     {
         return Task.Run(() =>
@@ -148,10 +166,10 @@ public class EventPublisher : IEventPublisher, IDisposable
                     properties.Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds());
 
                     _channel.BasicPublish(
-                        exchange: _settings.ExchangeName,
-                        routingKey: routingKey,
-                        basicProperties: properties,
-                        body: body
+                        _settings.ExchangeName,
+                        routingKey,
+                        properties,
+                        body
                     );
 
                     _logger.LogDebug("Published event {EventType} with ID {EventId}", routingKey, envelope.EventId);
@@ -163,89 +181,4 @@ public class EventPublisher : IEventPublisher, IDisposable
             }
         });
     }
-
-    public void Dispose()
-    {
-        try
-        {
-            _channel?.Close();
-            _channel?.Dispose();
-            _connection?.Close();
-            _connection?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error disposing RabbitMQ connection");
-        }
-    }
-}
-
-// Event envelope for consistent message structure
-public record EventEnvelope<T>
-{
-    public string EventType { get; init; } = string.Empty;
-    public string EventId { get; init; } = string.Empty;
-    public T Data { get; init; } = default!;
-    public DateTime Timestamp { get; init; }
-}
-
-// User lifecycle events for cross-service data synchronization
-public record UserCreatedEvent
-{
-    public long UserId { get; init; }
-    public string Username { get; init; } = string.Empty;
-    public string DisplayName { get; init; } = string.Empty;
-    public string Email { get; init; } = string.Empty;
-    public string? AvatarUrl { get; init; }
-    public DateTime CreatedAt { get; init; }
-}
-
-public record UserUpdatedEvent
-{
-    public long UserId { get; init; }
-    public string Username { get; init; } = string.Empty;
-    public string DisplayName { get; init; } = string.Empty;
-    public string Email { get; init; } = string.Empty;
-    public string? AvatarUrl { get; init; }
-    public DateTime UpdatedAt { get; init; }
-}
-
-public record UserDeletedEvent
-{
-    public long UserId { get; init; }
-    public DateTime DeletedAt { get; init; }
-}
-
-// Additional event types
-public record UserRatingChangedEvent
-{
-    public long UserId { get; init; }
-    public int OldRating { get; init; }
-    public int NewRating { get; init; }
-    public long? ContestId { get; init; }
-    public DateTime Timestamp { get; init; }
-}
-
-public record AchievementEarnedEvent
-{
-    public long UserId { get; init; }
-    public string AchievementType { get; init; } = string.Empty;
-    public string Title { get; init; } = string.Empty;
-    public DateTime Timestamp { get; init; }
-}
-
-public record RoleAssignedEvent
-{
-    public long UserId { get; init; }
-    public string RoleName { get; init; } = string.Empty;
-    public long AssignedBy { get; init; }
-    public DateTime Timestamp { get; init; }
-}
-
-public record UserBannedEvent
-{
-    public long UserId { get; init; }
-    public string Reason { get; init; } = string.Empty;
-    public long BannedBy { get; init; }
-    public DateTime Timestamp { get; init; }
 }

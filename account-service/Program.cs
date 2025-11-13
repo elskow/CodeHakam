@@ -2,15 +2,16 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using AccountService.BackgroundServices;
+using AccountService.Services.BackgroundServices;
 using AccountService.Configuration;
 using AccountService.Data;
 using AccountService.DTOs;
+using AccountService.DTOs.Common;
 using AccountService.Infrastructure;
 using AccountService.Middleware;
 using AccountService.Models;
-using AccountService.Services;
-using AccountService.Services.Impl;
+using AccountService.Services.Interfaces;
+using AccountService.Services.Implementations;
 using Casbin;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -339,7 +340,7 @@ public class Program
 }
 
 /// <summary>
-/// Swagger document filter to convert all URLs to lowercase
+///     Swagger document filter to convert all URLs to lowercase
 /// </summary>
 public class LowercaseDocumentFilter : IDocumentFilter
 {

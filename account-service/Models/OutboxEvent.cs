@@ -1,10 +1,12 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using AccountService.Constants;
+using AccountService.Enums;
 
 namespace AccountService.Models;
 
 [Table("outbox_events")]
-public class OutboxEvent
+public sealed class OutboxEvent
 {
     [Key]
     [Column("id")]
@@ -48,7 +50,7 @@ public class OutboxEvent
     [Required]
     [Column("status")]
     [MaxLength(50)]
-    public string Status { get; set; } = OutboxEventStatus.Pending;
+    public string Status { get; set; } = OutboxEventConstants.Pending;
 
     [Column("retry_count")]
     public int RetryCount { get; set; } = 0;
@@ -59,12 +61,4 @@ public class OutboxEvent
 
     [Column("next_retry_at")]
     public DateTime? NextRetryAt { get; set; }
-}
-
-public static class OutboxEventStatus
-{
-    public const string Pending = "pending";
-    public const string Processing = "processing";
-    public const string Published = "published";
-    public const string Failed = "failed";
 }

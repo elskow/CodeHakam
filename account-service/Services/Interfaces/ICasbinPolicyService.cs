@@ -1,6 +1,6 @@
 using Casbin;
 
-namespace AccountService.Services;
+namespace AccountService.Services.Interfaces;
 
 public interface ICasbinPolicyService
 {

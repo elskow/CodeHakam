@@ -1,6 +1,6 @@
 using AccountService.DTOs;
-
-namespace AccountService.Services;
+using AccountService.DTOs.Common;
+namespace AccountService.Services.Interfaces;
 
 public interface IUserService
 {

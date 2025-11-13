@@ -4,9 +4,10 @@ using MailKit.Security;
 using Microsoft.Extensions.Options;
 using MimeKit;
 
-namespace AccountService.Services.Impl;
+using AccountService.Services.Interfaces;
+namespace AccountService.Services.Implementations;
 
-public class EmailService(
+public sealed class EmailService(
     IOptions<EmailSettings> emailSettings,
     ILogger<EmailService> logger,
     IConfiguration configuration)

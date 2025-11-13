@@ -2,7 +2,8 @@ using AccountService.Data;
 using Casbin;
 using Microsoft.EntityFrameworkCore;
 
-namespace AccountService.Services.Impl;
+using AccountService.Services.Interfaces;
+namespace AccountService.Services.Implementations;
 
 public sealed class CasbinPolicyService(
     ApplicationDbContext context,
@@ -22,6 +23,13 @@ public sealed class CasbinPolicyService(
             logger.LogError(ex, "Failed to load policies into enforcer");
             throw;
         }
+    }
+
+    public async Task ClearAllPoliciesAsync(IEnforcer enforcer)
+    {
+        await enforcer.RemoveFilteredPolicyAsync(fieldIndex: 0, "p");
+        await enforcer.RemoveFilteredGroupingPolicyAsync(fieldIndex: 0, "g");
+        logger.LogDebug("Cleared all policies from enforcer");
     }
 
     private async Task LoadRolePermissionsAsync(IEnforcer enforcer)
@@ -59,12 +67,5 @@ public sealed class CasbinPolicyService(
         }
 
         logger.LogDebug("Loaded {Count} user-role groupings", userRoles.Count);
-    }
-
-    public async Task ClearAllPoliciesAsync(IEnforcer enforcer)
-    {
-        await enforcer.RemoveFilteredPolicyAsync(0, "p");
-        await enforcer.RemoveFilteredGroupingPolicyAsync(0, "g");
-        logger.LogDebug("Cleared all policies from enforcer");
     }
 }

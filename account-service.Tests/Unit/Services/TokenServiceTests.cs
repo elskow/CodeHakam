@@ -3,7 +3,7 @@ using System.Security.Claims;
 using AccountService.Configuration;
 using AccountService.Data;
 using AccountService.Models;
-using AccountService.Services.Impl;
+using AccountService.Services.Implementations;
 using AccountService.Tests.Helpers;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -16,8 +16,8 @@ namespace AccountService.Tests.Unit.Services;
 public class TokenServiceTests : IDisposable
 {
     private readonly ApplicationDbContext _context;
-    private readonly Mock<ILogger<TokenService>> _loggerMock;
     private readonly IOptions<JwtSettings> _jwtSettings;
+    private readonly Mock<ILogger<TokenService>> _loggerMock;
     private readonly TokenService _tokenService;
 
     public TokenServiceTests()
@@ -319,7 +319,7 @@ public class TokenServiceTests : IDisposable
         await _context.RefreshTokens.AddAsync(refreshToken);
         await _context.SaveChangesAsync();
 
-        var result = await _tokenService.ValidateRefreshTokenAsync(rawToken, 999);
+        var result = await _tokenService.ValidateRefreshTokenAsync(rawToken, userId: 999);
 
         result.Should().BeFalse();
     }
@@ -559,7 +559,9 @@ public class TokenServiceTests : IDisposable
     private static bool IsBase64String(string value)
     {
         if (string.IsNullOrEmpty(value))
+        {
             return false;
+        }
 
         try
         {

@@ -1,8 +1,9 @@
 using AccountService.Data;
 using AccountService.DTOs;
+using AccountService.Events;
 using AccountService.Models;
-using AccountService.Services;
-using AccountService.Services.Impl;
+using AccountService.Services.Interfaces;
+using AccountService.Services.Implementations;
 using AccountService.Tests.Helpers;
 using Casbin;
 using FluentAssertions;
@@ -14,12 +15,12 @@ namespace AccountService.Tests.Unit.Services;
 
 public class AdminServiceTests : IDisposable
 {
+    private readonly AdminService _adminService;
     private readonly ApplicationDbContext _context;
-    private readonly Mock<ICasbinPolicyService> _policyServiceMock;
+    private readonly Mock<IEnforcer> _enforcerMock;
     private readonly Mock<IEventPublisher> _eventPublisherMock;
     private readonly Mock<ILogger<AdminService>> _loggerMock;
-    private readonly Mock<IEnforcer> _enforcerMock;
-    private readonly AdminService _adminService;
+    private readonly Mock<ICasbinPolicyService> _policyServiceMock;
 
     public AdminServiceTests()
     {
@@ -64,7 +65,7 @@ public class AdminServiceTests : IDisposable
     [Fact]
     public async Task GetUsersAsync_WithPagination_ShouldReturnCorrectPage()
     {
-        for (int i = 1; i <= 15; i++)
+        for (var i = 1; i <= 15; i++)
         {
             var user = TestDataBuilder.CreateTestUser(
                 username: $"user{i}",
@@ -142,7 +143,7 @@ public class AdminServiceTests : IDisposable
         await _context.Users.AddAsync(user);
         await _context.SaveChangesAsync();
 
-        var result = await _adminService.BanUserAsync(user.Id, "Reason", 100L);
+        var result = await _adminService.BanUserAsync(user.Id, "Reason", adminUserId: 100L);
 
         result.Should().BeFalse();
         _eventPublisherMock.Verify(x => x.PublishUserBannedAsync(It.IsAny<UserBannedEvent>()), Times.Never);
@@ -151,7 +152,7 @@ public class AdminServiceTests : IDisposable
     [Fact]
     public async Task BanUserAsync_WithNonExistentUser_ShouldReturnFalse()
     {
-        var result = await _adminService.BanUserAsync(999, "Reason", 100L);
+        var result = await _adminService.BanUserAsync(userId: 999, "Reason", adminUserId: 100L);
 
         result.Should().BeFalse();
     }
@@ -183,7 +184,7 @@ public class AdminServiceTests : IDisposable
         await _context.Users.AddAsync(user);
         await _context.SaveChangesAsync();
 
-        var result = await _adminService.UnbanUserAsync(user.Id, 100L);
+        var result = await _adminService.UnbanUserAsync(user.Id, adminUserId: 100L);
 
         result.Should().BeFalse();
     }
@@ -191,7 +192,7 @@ public class AdminServiceTests : IDisposable
     [Fact]
     public async Task UnbanUserAsync_WithNonExistentUser_ShouldReturnFalse()
     {
-        var result = await _adminService.UnbanUserAsync(999, 100L);
+        var result = await _adminService.UnbanUserAsync(userId: 999, adminUserId: 100L);
 
         result.Should().BeFalse();
     }
@@ -247,7 +248,7 @@ public class AdminServiceTests : IDisposable
         await _context.UserRoles.AddAsync(userRole);
         await _context.SaveChangesAsync();
 
-        var result = await _adminService.AssignRoleAsync(user.Id, existingRole.Id, 100L);
+        var result = await _adminService.AssignRoleAsync(user.Id, existingRole.Id, adminUserId: 100L);
 
         result.Should().BeFalse();
         _policyServiceMock.Verify(
@@ -260,7 +261,7 @@ public class AdminServiceTests : IDisposable
     {
         var existingRole = await _context.Roles.FirstAsync();
 
-        var result = await _adminService.AssignRoleAsync(999, existingRole.Id, 100L);
+        var result = await _adminService.AssignRoleAsync(userId: 999, existingRole.Id, adminUserId: 100L);
 
         result.Should().BeFalse();
     }
@@ -273,7 +274,7 @@ public class AdminServiceTests : IDisposable
         await _context.Users.AddAsync(user);
         await _context.SaveChangesAsync();
 
-        var result = await _adminService.AssignRoleAsync(user.Id, 999, 100L);
+        var result = await _adminService.AssignRoleAsync(user.Id, roleId: 999, adminUserId: 100L);
 
         result.Should().BeFalse();
     }
@@ -295,7 +296,7 @@ public class AdminServiceTests : IDisposable
         await _context.UserRoles.AddRangeAsync(userRole1, userRole2);
         await _context.SaveChangesAsync();
 
-        var result = await _adminService.RemoveRoleAsync(user.Id, role2.Id, 100L);
+        var result = await _adminService.RemoveRoleAsync(user.Id, role2.Id, adminUserId: 100L);
 
         result.Should().BeTrue();
 
@@ -317,7 +318,7 @@ public class AdminServiceTests : IDisposable
 
         var existingRole = await _context.Roles.FirstAsync();
 
-        var result = await _adminService.RemoveRoleAsync(user.Id, existingRole.Id, 100L);
+        var result = await _adminService.RemoveRoleAsync(user.Id, existingRole.Id, adminUserId: 100L);
 
         result.Should().BeFalse();
     }
@@ -336,7 +337,7 @@ public class AdminServiceTests : IDisposable
         await _context.UserRoles.AddAsync(userRole);
         await _context.SaveChangesAsync();
 
-        var result = await _adminService.RemoveRoleAsync(user.Id, existingRole.Id, 100L);
+        var result = await _adminService.RemoveRoleAsync(user.Id, existingRole.Id, adminUserId: 100L);
 
         result.Should().BeFalse();
 
@@ -508,7 +509,7 @@ public class AdminServiceTests : IDisposable
         await _context.Users.AddAsync(user);
         await _context.SaveChangesAsync();
 
-        var result = await _adminService.VerifyUserEmailAsync(user.Id, 100L);
+        var result = await _adminService.VerifyUserEmailAsync(user.Id, adminUserId: 100L);
 
         result.Should().BeFalse();
     }
@@ -516,7 +517,7 @@ public class AdminServiceTests : IDisposable
     [Fact]
     public async Task VerifyUserEmailAsync_WithNonExistentUser_ShouldReturnFalse()
     {
-        var result = await _adminService.VerifyUserEmailAsync(999, 100L);
+        var result = await _adminService.VerifyUserEmailAsync(userId: 999, adminUserId: 100L);
 
         result.Should().BeFalse();
     }

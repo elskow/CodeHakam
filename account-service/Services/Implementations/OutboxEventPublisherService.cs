@@ -1,10 +1,13 @@
-using AccountService.Data;
-using AccountService.Models;
 using System.Text.Json;
+using AccountService.Constants;
+using AccountService.Data;
+using AccountService.Events;
+using AccountService.Models;
 
-namespace AccountService.Services.Impl;
+using AccountService.Services.Interfaces;
+namespace AccountService.Services.Implementations;
 
-public class OutboxEventPublisherService : IEventPublisher
+public sealed class OutboxEventPublisherService : IEventPublisher
 {
     private readonly ApplicationDbContext _context;
     private readonly ILogger<OutboxEventPublisherService> _logger;
@@ -79,7 +82,7 @@ public class OutboxEventPublisherService : IEventPublisher
                 AggregateType = aggregateType,
                 Payload = JsonSerializer.Serialize(eventData),
                 CreatedAt = DateTime.UtcNow,
-                Status = OutboxEventStatus.Pending
+                Status = OutboxEventConstants.Pending
             };
 
             _context.OutboxEvents.Add(outboxEvent);

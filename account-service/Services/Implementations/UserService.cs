@@ -1,10 +1,12 @@
 using AccountService.Data;
 using AccountService.DTOs;
-using AccountService.Enums;
+using AccountService.DTOs.Common;
+using AccountService.Events;
 using AccountService.Models;
 using Microsoft.EntityFrameworkCore;
 
-namespace AccountService.Services.Impl;
+using AccountService.Services.Interfaces;
+namespace AccountService.Services.Implementations;
 
 public sealed class UserService(
     ApplicationDbContext context,
@@ -45,7 +47,7 @@ public sealed class UserService(
             return null;
         }
 
-        return MapToUserProfileDto(user, true);
+        return MapToUserProfileDto(user, isPublic: true);
     }
 
     public async Task<UserProfileDto> UpdateUserProfileAsync(long userId, UpdateProfileRequest request)
@@ -262,7 +264,7 @@ public sealed class UserService(
             var searchTerm = request.SearchTerm.ToLower();
             query = query.Where(u =>
                 u.UserName!.ToLower().Contains(searchTerm) ||
-                (u.FullName != null && u.FullName.ToLower().Contains(searchTerm)) ||
+                u.FullName != null && u.FullName.ToLower().Contains(searchTerm) ||
                 u.Email!.ToLower().Contains(searchTerm));
         }
 
@@ -375,7 +377,7 @@ public sealed class UserService(
             TotalSubmissions = stats.TotalSubmissions,
             AcceptedSubmissions = stats.AcceptedSubmissions,
             AcceptanceRate = stats.TotalSubmissions > 0
-                ? Math.Round((decimal)stats.AcceptedSubmissions / stats.TotalSubmissions * 100, 2)
+                ? Math.Round((decimal)stats.AcceptedSubmissions / stats.TotalSubmissions * 100, decimals: 2)
                 : 0,
             MaxStreak = stats.MaxStreak,
             CurrentStreak = stats.CurrentStreak,

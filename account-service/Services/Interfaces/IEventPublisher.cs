@@ -1,6 +1,6 @@
-using AccountService.Services.Impl;
+using AccountService.Events;
 
-namespace AccountService.Services;
+namespace AccountService.Services.Interfaces;
 
 public interface IEventPublisher
 {

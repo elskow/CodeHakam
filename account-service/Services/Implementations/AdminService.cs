@@ -1,10 +1,14 @@
+using AccountService.Constants;
 using AccountService.Data;
 using AccountService.DTOs;
+using AccountService.DTOs.Common;
+using AccountService.Events;
 using AccountService.Models;
+using AccountService.Services.Interfaces;
 using Casbin;
 using Microsoft.EntityFrameworkCore;
 
-namespace AccountService.Services.Impl;
+namespace AccountService.Services.Implementations;
 
 public sealed class AdminService(
     ApplicationDbContext context,
@@ -27,7 +31,7 @@ public sealed class AdminService(
             var searchTerm = request.SearchTerm.ToLower();
             query = query.Where(u =>
                 u.UserName!.ToLower().Contains(searchTerm) ||
-                (u.FullName != null && u.FullName.ToLower().Contains(searchTerm)) ||
+                u.FullName != null && u.FullName.ToLower().Contains(searchTerm) ||
                 u.Email!.ToLower().Contains(searchTerm));
         }
 
@@ -373,7 +377,7 @@ public sealed class AdminService(
     public async Task<SystemStatisticsDto> GetSystemStatisticsAsync()
     {
         var totalUsers = await context.Users.CountAsync();
-        var activeUsers = await context.Users.CountAsync(u => u.LastLoginAt >= DateTime.UtcNow.AddDays(-30));
+        var activeUsers = await context.Users.CountAsync(u => u.LastLoginAt >= DateTime.UtcNow.AddDays(-ApplicationConstants.Thresholds.ActiveUserDays));
         var bannedUsers = await context.Users.CountAsync(u => u.IsBanned);
         var verifiedUsers = await context.Users.CountAsync(u => u.IsVerified);
         var lastUserRegistration = await context.Users.OrderByDescending(u => u.CreatedAt).Select(u => u.CreatedAt)
@@ -401,7 +405,7 @@ public sealed class AdminService(
             TotalSubmissions = stats.TotalSubmissions,
             AcceptedSubmissions = stats.AcceptedSubmissions,
             AcceptanceRate = stats.TotalSubmissions > 0
-                ? Math.Round((decimal)stats.AcceptedSubmissions / stats.TotalSubmissions * 100, 2)
+                ? Math.Round((decimal)stats.AcceptedSubmissions / stats.TotalSubmissions * 100, decimals: 2)
                 : 0,
             MaxStreak = stats.MaxStreak,
             CurrentStreak = stats.CurrentStreak,

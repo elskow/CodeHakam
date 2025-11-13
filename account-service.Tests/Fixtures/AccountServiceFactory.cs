@@ -1,7 +1,6 @@
 using AccountService.Data;
 using AccountService.Models;
-using AccountService.Services;
-using AccountService.Services.Impl;
+using AccountService.Services.Interfaces;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -11,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Moq;
+using StackExchange.Redis;
 
 namespace AccountService.Tests.Fixtures;
 
@@ -31,8 +31,8 @@ public class AccountServiceFactory : WebApplicationFactory<Program>
                 options.EnableSensitiveDataLogging();
             });
 
-            services.RemoveAll<StackExchange.Redis.IConnectionMultiplexer>();
-            services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ => null!);
+            services.RemoveAll<IConnectionMultiplexer>();
+            services.AddSingleton<IConnectionMultiplexer>(_ => null!);
 
             services.RemoveAll<IEventPublisher>();
             var mockEventPublisher = new Mock<IEventPublisher>();

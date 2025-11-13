@@ -1,6 +1,8 @@
 using AccountService.Authorization;
 using AccountService.DTOs;
-using AccountService.Services;
+using AccountService.DTOs.Common;
+using AccountService.Extensions;
+using AccountService.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;

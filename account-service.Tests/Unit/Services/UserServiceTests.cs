@@ -1,11 +1,10 @@
 using AccountService.Data;
 using AccountService.DTOs;
 using AccountService.Models;
-using AccountService.Services;
-using AccountService.Services.Impl;
+using AccountService.Services.Interfaces;
+using AccountService.Services.Implementations;
 using AccountService.Tests.Helpers;
 using FluentAssertions;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -14,8 +13,8 @@ namespace AccountService.Tests.Unit.Services;
 public class UserServiceTests : IDisposable
 {
     private readonly ApplicationDbContext _context;
-    private readonly Mock<ILogger<UserService>> _loggerMock;
     private readonly Mock<IEventPublisher> _eventPublisherMock;
+    private readonly Mock<ILogger<UserService>> _loggerMock;
     private readonly UserService _userService;
 
     public UserServiceTests()
@@ -46,7 +45,7 @@ public class UserServiceTests : IDisposable
         await _context.SaveChangesAsync();
 
         var statistics = TestDataBuilder.CreateUserStatistics(
-            userId: user.Id,
+            user.Id,
             problemsSolved: 50,
             contestsParticipated: 10,
             totalSubmissions: 100);
@@ -182,7 +181,7 @@ public class UserServiceTests : IDisposable
     {
         var request = new UpdateProfileRequest { FullName = "Test" };
 
-        var act = async () => await _userService.UpdateUserProfileAsync(999, request);
+        var act = async () => await _userService.UpdateUserProfileAsync(userId: 999, request);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("User not found");
@@ -197,7 +196,7 @@ public class UserServiceTests : IDisposable
         await _context.SaveChangesAsync();
 
         var statistics = TestDataBuilder.CreateUserStatistics(
-            userId: user.Id,
+            user.Id,
             problemsSolved: 75,
             contestsParticipated: 20,
             totalSubmissions: 200);
@@ -286,7 +285,7 @@ public class UserServiceTests : IDisposable
         var user = TestDataBuilder.CreateTestUser();
         await _context.Users.AddAsync(user);
 
-        for (int i = 0; i < 10; i++)
+        for (var i = 0; i < 10; i++)
         {
             var history = new RatingHistory
             {
@@ -349,9 +348,9 @@ public class UserServiceTests : IDisposable
         await _context.SaveChangesAsync();
 
         var settings = TestDataBuilder.CreateUserSettings(
-            userId: user.Id,
-            language: "en",
-            theme: "dark",
+            user.Id,
+            "en",
+            "dark",
             timezone: "America/New_York");
 
         await _context.UserSettings.AddAsync(settings);
@@ -442,9 +441,7 @@ public class UserServiceTests : IDisposable
         await _context.SaveChangesAsync();
 
         var settings = TestDataBuilder.CreateUserSettings(
-            userId: user.Id,
-            language: "en",
-            theme: "light");
+            user.Id);
 
         await _context.UserSettings.AddAsync(settings);
         await _context.SaveChangesAsync();
@@ -624,7 +621,7 @@ public class UserServiceTests : IDisposable
     [Fact]
     public async Task SearchUsersAsync_WithPagination_ShouldReturnCorrectPage()
     {
-        for (int i = 1; i <= 25; i++)
+        for (var i = 1; i <= 25; i++)
         {
             var user = TestDataBuilder.CreateTestUser(
                 username: $"user{i}",
@@ -653,7 +650,7 @@ public class UserServiceTests : IDisposable
     [Fact]
     public async Task SearchUsersAsync_WithLastPage_ShouldReturnRemainingItems()
     {
-        for (int i = 1; i <= 25; i++)
+        for (var i = 1; i <= 25; i++)
         {
             var user = TestDataBuilder.CreateTestUser(
                 username: $"user{i}",

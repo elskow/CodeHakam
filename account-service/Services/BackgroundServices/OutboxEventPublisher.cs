@@ -1,29 +1,32 @@
+using AccountService.Configuration;
+using AccountService.Constants;
 using AccountService.Data;
 using AccountService.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace AccountService.BackgroundServices;
+namespace AccountService.Services.BackgroundServices;
 
 public class OutboxEventPublisher : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<OutboxEventPublisher> _logger;
-    private readonly IConfiguration _configuration;
-    private readonly TimeSpan _pollingInterval = TimeSpan.FromSeconds(5);
-    private readonly int _batchSize = 50;
+    private readonly RabbitMqSettings _rabbitMqSettings;
+    private readonly TimeSpan _pollingInterval = TimeSpan.FromSeconds(ApplicationConstants.Intervals.OutboxPollingSeconds);
+    private readonly int _batchSize = ApplicationConstants.Limits.OutboxBatchSize;
 
     public OutboxEventPublisher(
         IServiceProvider serviceProvider,
         ILogger<OutboxEventPublisher> logger,
-        IConfiguration configuration)
+        IOptions<RabbitMqSettings> rabbitMqSettings)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
-        _configuration = configuration;
+        _rabbitMqSettings = rabbitMqSettings.Value;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -53,8 +56,8 @@ public class OutboxEventPublisher : BackgroundService
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
         var pendingEvents = await dbContext.OutboxEvents
-            .Where(e => e.Status == OutboxEventStatus.Pending ||
-                       (e.Status == OutboxEventStatus.Failed && e.NextRetryAt <= DateTime.UtcNow))
+            .Where(e => e.Status == OutboxEventConstants.Pending ||
+                       (e.Status == OutboxEventConstants.Failed && e.NextRetryAt <= DateTime.UtcNow))
             .OrderBy(e => e.CreatedAt)
             .Take(_batchSize)
             .ToListAsync(stoppingToken);
@@ -73,20 +76,20 @@ public class OutboxEventPublisher : BackgroundService
         {
             var factory = new ConnectionFactory
             {
-                HostName = _configuration["RabbitMQ:Host"] ?? "localhost",
-                Port = int.Parse(_configuration["RabbitMQ:Port"] ?? "5672"),
-                UserName = _configuration["RabbitMQ:Username"] ?? "guest",
-                Password = _configuration["RabbitMQ:Password"] ?? "guest",
-                VirtualHost = _configuration["RabbitMQ:VirtualHost"] ?? "/",
+                HostName = _rabbitMqSettings.Host,
+                Port = _rabbitMqSettings.Port,
+                UserName = _rabbitMqSettings.Username,
+                Password = _rabbitMqSettings.Password,
+                VirtualHost = _rabbitMqSettings.VirtualHost,
                 AutomaticRecoveryEnabled = true,
-                NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
+                NetworkRecoveryInterval = TimeSpan.FromSeconds(ApplicationConstants.Intervals.NetworkRecoverySeconds)
             };
 
             connection = factory.CreateConnection();
             channel = connection.CreateModel();
 
-            var exchangeName = _configuration["RabbitMQ:ExchangeName"] ?? "codehakam.events";
-            var exchangeType = _configuration["RabbitMQ:ExchangeType"] ?? "topic";
+            var exchangeName = _rabbitMqSettings.ExchangeName;
+            var exchangeType = "topic";
 
             channel.ExchangeDeclare(exchangeName, exchangeType, durable: true);
 
@@ -94,7 +97,7 @@ public class OutboxEventPublisher : BackgroundService
             {
                 try
                 {
-                    outboxEvent.Status = OutboxEventStatus.Processing;
+                    outboxEvent.Status = OutboxEventConstants.Processing;
                     await dbContext.SaveChangesAsync(stoppingToken);
 
                     // Wrap payload in EventEnvelope structure
@@ -135,7 +138,7 @@ public class OutboxEventPublisher : BackgroundService
                         body: body
                     );
 
-                    outboxEvent.Status = OutboxEventStatus.Published;
+                    outboxEvent.Status = OutboxEventConstants.Published;
                     outboxEvent.PublishedAt = DateTime.UtcNow;
                     outboxEvent.ProcessedAt = DateTime.UtcNow;
                     await dbContext.SaveChangesAsync(stoppingToken);
@@ -147,10 +150,12 @@ public class OutboxEventPublisher : BackgroundService
                 {
                     _logger.LogError(ex, "Failed to publish outbox event {EventId}", outboxEvent.EventId);
 
-                    outboxEvent.Status = OutboxEventStatus.Failed;
+                    outboxEvent.Status = OutboxEventConstants.Failed;
                     outboxEvent.RetryCount++;
-                    outboxEvent.LastError = ex.Message.Length > 2000 ? ex.Message.Substring(0, 2000) : ex.Message;
-                    outboxEvent.NextRetryAt = DateTime.UtcNow.AddMinutes(Math.Pow(2, Math.Min(outboxEvent.RetryCount, 6)));
+                    outboxEvent.LastError = ex.Message.Length > ApplicationConstants.Limits.MaxErrorMessageLength
+                        ? ex.Message.Substring(0, ApplicationConstants.Limits.MaxErrorMessageLength)
+                        : ex.Message;
+                    outboxEvent.NextRetryAt = DateTime.UtcNow.AddMinutes(Math.Pow(2, Math.Min(outboxEvent.RetryCount, ApplicationConstants.Limits.MaxRetryExponent)));
                     await dbContext.SaveChangesAsync(stoppingToken);
                 }
             }
