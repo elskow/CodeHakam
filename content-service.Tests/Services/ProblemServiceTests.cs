@@ -346,6 +346,10 @@ public class ProblemServiceTests : IDisposable
             .ReturnsAsync(existingProblem);
 
         _problemRepositoryMock
+            .Setup(r => r.GetByIdAsync(problemId, false))
+            .ReturnsAsync(existingProblem);
+
+        _problemRepositoryMock
             .Setup(r => r.UpdateAsync(It.IsAny<Problem>()))
             .ReturnsAsync((Problem p) => p);
 

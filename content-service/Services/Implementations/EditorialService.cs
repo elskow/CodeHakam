@@ -164,6 +164,11 @@ public sealed class EditorialService(
             throw new InvalidOperationException($"Editorial not found for problem {problemId}");
         }
 
+        if (!await IsAuthorOrAdminAsync(problemId, userId, false, cancellationToken))
+        {
+            throw new UnauthorizedAccessException($"User {userId} is not authorized to publish editorial for problem {problemId}");
+        }
+
         if (editorial.IsPublished)
         {
             throw new InvalidOperationException($"Editorial for problem {problemId} is already published");
@@ -210,6 +215,11 @@ public sealed class EditorialService(
         if (editorial == null)
         {
             throw new InvalidOperationException($"Editorial not found for problem {problemId}");
+        }
+
+        if (!await IsAuthorOrAdminAsync(problemId, userId, false, cancellationToken))
+        {
+            throw new UnauthorizedAccessException($"User {userId} is not authorized to delete editorial for problem {problemId}");
         }
 
         await editorialRepository.DeleteAsync(editorial.Id);

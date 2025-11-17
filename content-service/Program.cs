@@ -84,7 +84,7 @@ public abstract class Program
                 connectionString,
                 name: "postgres",
                 failureStatus: HealthStatus.Unhealthy,
-                tags: new[] { "db", "sql", "postgres" });
+                tags: ["db", "sql", "postgres"]);
 
         builder.Services.AddDbContext<ContentDbContext>(options =>
             options.UseNpgsql(connectionString));
@@ -95,14 +95,12 @@ public abstract class Program
         var minioSecretKey = builder.Configuration["MinIO:SecretKey"] ?? "minioadmin";
         var minioUseSsl = bool.Parse(builder.Configuration["MinIO:UseSSL"] ?? "false");
 
-        builder.Services.AddSingleton<IMinioClient>(sp =>
-        {
-            return new MinioClient()
+        builder.Services.AddSingleton<IMinioClient>(_ =>
+            new MinioClient()
                 .WithEndpoint(minioEndpoint)
                 .WithCredentials(minioAccessKey, minioSecretKey)
                 .WithSSL(minioUseSsl)
-                .Build();
-        });
+                .Build());
 
         // Configure JWT Authentication
         var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "codehakam";
@@ -258,18 +256,16 @@ public abstract class Program
         // Run database migrations if in development
         if (app.Environment.IsDevelopment())
         {
-            using (var scope = app.Services.CreateScope())
+            using var scope = app.Services.CreateScope();
+            try
             {
-                try
-                {
-                    var dbContext = scope.ServiceProvider.GetRequiredService<ContentDbContext>();
-                    dbContext.Database.Migrate();
-                    Log.Information("Database migrations applied successfully");
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "An error occurred while migrating the database");
-                }
+                var dbContext = scope.ServiceProvider.GetRequiredService<ContentDbContext>();
+                dbContext.Database.Migrate();
+                Log.Information("Database migrations applied successfully");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "An error occurred while migrating the database");
             }
         }
 

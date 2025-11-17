@@ -95,7 +95,10 @@ public sealed class DiscussionService(
             throw new InvalidOperationException($"Discussion with ID {discussionId} not found");
         }
 
-
+        if (discussion.UserId != userId)
+        {
+            throw new UnauthorizedAccessException($"User {userId} is not authorized to update discussion {discussionId}");
+        }
 
         discussion.Title = title;
         discussion.Content = content;
@@ -116,7 +119,10 @@ public sealed class DiscussionService(
             throw new InvalidOperationException($"Discussion with ID {id} not found");
         }
 
-
+        if (discussion.UserId != userId)
+        {
+            throw new UnauthorizedAccessException($"User {userId} is not authorized to delete discussion {id}");
+        }
 
         await discussionRepository.DeleteAsync(id);
 
@@ -188,7 +194,10 @@ public sealed class DiscussionService(
             throw new InvalidOperationException($"Comment with ID {commentId} not found");
         }
 
-
+        if (comment.UserId != userId)
+        {
+            throw new UnauthorizedAccessException($"User {userId} is not authorized to update comment {commentId}");
+        }
 
         comment.Content = content;
         comment.UpdatedAt = DateTime.UtcNow;
@@ -208,7 +217,10 @@ public sealed class DiscussionService(
             throw new InvalidOperationException($"Comment with ID {commentId} not found");
         }
 
-
+        if (comment.UserId != userId)
+        {
+            throw new UnauthorizedAccessException($"User {userId} is not authorized to delete comment {commentId}");
+        }
 
         var discussion = await discussionRepository.GetByIdAsync(comment.DiscussionId, includeComments: false);
         if (discussion == null)
@@ -233,7 +245,7 @@ public sealed class DiscussionService(
 
     public async Task VoteDiscussionAsync(long discussionId, bool upvote, long userId, CancellationToken cancellationToken = default)
     {
-        await using var transaction = await discussionRepository.BeginTransactionAsync();
+        var transaction = await discussionRepository.BeginTransactionAsync();
         try
         {
             var discussion = await discussionRepository.GetByIdAsync(discussionId, includeComments: false);
@@ -262,15 +274,25 @@ public sealed class DiscussionService(
                 await discussionRepository.RecordVoteAsync(discussionId, userId, upvote);
             }
 
-            await transaction.CommitAsync(cancellationToken);
+            if (transaction != null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
 
             logger.LogInformation("Discussion {DiscussionId} voted by user {UserId}: {VoteType}",
                 discussionId, userId, upvote ? "upvote" : "downvote");
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            if (transaction != null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+            }
             throw;
+        }
+        finally
+        {
+            transaction?.Dispose();
         }
     }
 

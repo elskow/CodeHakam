@@ -153,6 +153,11 @@ public sealed class ProblemService(
             throw new KeyNotFoundException($"Problem with ID {problemId} not found");
         }
 
+        if (!await IsAuthorOrAdminAsync(problemId, userId, false, cancellationToken))
+        {
+            throw new UnauthorizedAccessException($"User {userId} is not authorized to update problem {problemId}");
+        }
+
         // Update only non-null fields
         if (title != null)
         {
@@ -230,6 +235,11 @@ public sealed class ProblemService(
         if (problem == null)
         {
             throw new KeyNotFoundException($"Problem with ID {id} not found");
+        }
+
+        if (!await IsAuthorOrAdminAsync(id, userId, false, cancellationToken))
+        {
+            throw new UnauthorizedAccessException($"User {userId} is not authorized to delete problem {id}");
         }
 
         await problemRepository.DeleteAsync(id);

@@ -57,7 +57,10 @@ public sealed class TestCaseService(
             throw new KeyNotFoundException($"Problem with ID {problemId} not found");
         }
 
-
+        if (problem.AuthorId != userId)
+        {
+            throw new UnauthorizedAccessException($"User {userId} is not authorized to upload test cases for problem {problemId}");
+        }
 
         // Validate file sizes
         if (!await ValidateTestCaseSizeAsync(inputFile.Length, cancellationToken))
@@ -167,7 +170,10 @@ public sealed class TestCaseService(
             throw new KeyNotFoundException($"Problem with ID {testCase.ProblemId} not found");
         }
 
-
+        if (problem.AuthorId != userId)
+        {
+            throw new UnauthorizedAccessException($"User {userId} is not authorized to delete test case {testCaseId}");
+        }
 
         // Delete files from storage
         try

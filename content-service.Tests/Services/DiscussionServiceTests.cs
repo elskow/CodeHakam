@@ -1,24 +1,18 @@
-namespace ContentService.Tests.Services;
-
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using Enums;
-using Models;
-using Repositories.Interfaces;
+using ContentService.Enums;
+using ContentService.Models;
+using ContentService.Repositories.Interfaces;
 using ContentService.Services.Implementations;
 using ContentService.Services.Interfaces;
 using Microsoft.Extensions.Logging;
 using Moq;
-using Xunit;
+
+namespace ContentService.Tests.Services;
 
 public class DiscussionServiceTests
 {
     private readonly Mock<IDiscussionRepository> _discussionRepositoryMock;
-    private readonly Mock<IProblemRepository> _problemRepositoryMock;
     private readonly Mock<IEventPublisher> _eventPublisherMock;
+    private readonly Mock<IProblemRepository> _problemRepositoryMock;
     private readonly DiscussionService _service;
 
     public DiscussionServiceTests()
@@ -87,15 +81,17 @@ public class DiscussionServiceTests
     }
 
     [Fact]
-    public async Task GetDiscussionsAsync_WithProblemId_ShouldReturnDiscussionsForProblem()
+    public async Task GetDiscussionsByProblemAsync_WithProblemId_ShouldReturnDiscussionsForProblem()
     {
         var problemId = 10L;
         var page = 1;
         var pageSize = 10;
         var discussions = new List<Discussion>
         {
-            new Discussion { Id = 1, ProblemId = problemId, UserId = 100L, Title = "Discussion 1", Content = "Content 1" },
-            new Discussion { Id = 2, ProblemId = problemId, UserId = 101L, Title = "Discussion 2", Content = "Content 2" }
+            new()
+                { Id = 1, ProblemId = problemId, UserId = 100L, Title = "Discussion 1", Content = "Content 1" },
+            new()
+                { Id = 2, ProblemId = problemId, UserId = 101L, Title = "Discussion 2", Content = "Content 2" }
         };
 
         _discussionRepositoryMock
@@ -106,10 +102,11 @@ public class DiscussionServiceTests
             .Setup(r => r.GetCountByProblemAsync(problemId))
             .ReturnsAsync(2);
 
-        var result = await _service.GetDiscussionsAsync(problemId, page, pageSize);
+        var result = await _service.GetDiscussionsByProblemAsync(problemId, page, pageSize);
+        var count = await _service.GetProblemDiscussionsCountAsync(problemId);
 
-        Assert.Equal(2, result.TotalCount);
-        Assert.Equal(2, result.Discussions.Count());
+        Assert.Equal(expected: 2, count);
+        Assert.Equal(expected: 2, result.Count());
     }
 
     [Fact]
@@ -119,9 +116,12 @@ public class DiscussionServiceTests
         var pageSize = 10;
         var discussions = new List<Discussion>
         {
-            new Discussion { Id = 1, ProblemId = 10L, UserId = 100L, Title = "Discussion 1", Content = "Content 1" },
-            new Discussion { Id = 2, ProblemId = 11L, UserId = 101L, Title = "Discussion 2", Content = "Content 2" },
-            new Discussion { Id = 3, ProblemId = 12L, UserId = 102L, Title = "Discussion 3", Content = "Content 3" }
+            new()
+                { Id = 1, ProblemId = 10L, UserId = 100L, Title = "Discussion 1", Content = "Content 1" },
+            new()
+                { Id = 2, ProblemId = 11L, UserId = 101L, Title = "Discussion 2", Content = "Content 2" },
+            new()
+                { Id = 3, ProblemId = 12L, UserId = 102L, Title = "Discussion 3", Content = "Content 3" }
         };
 
         _discussionRepositoryMock
@@ -132,10 +132,11 @@ public class DiscussionServiceTests
             .Setup(r => r.GetTotalCountAsync())
             .ReturnsAsync(3);
 
-        var result = await _service.GetDiscussionsAsync(null, page, pageSize);
+        var result = await _service.GetDiscussionsAsync(page, pageSize);
+        var count = await _service.GetTotalDiscussionsCountAsync();
 
-        Assert.Equal(3, result.TotalCount);
-        Assert.Equal(3, result.Discussions.Count());
+        Assert.Equal(expected: 3, count);
+        Assert.Equal(expected: 3, result.Count());
     }
 
     [Fact]
@@ -187,7 +188,7 @@ public class DiscussionServiceTests
         Assert.Equal(title, result.Title);
         Assert.Equal(content, result.Content);
         Assert.Equal(authorId, result.UserId);
-        Assert.Equal(0, result.VoteCount);
+        Assert.Equal(expected: 0, result.VoteCount);
 
         _discussionRepositoryMock.Verify(r => r.CreateAsync(It.IsAny<Discussion>()), Times.Once);
         _eventPublisherMock.Verify(
@@ -205,7 +206,7 @@ public class DiscussionServiceTests
             .ReturnsAsync((Problem?)null);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _service.CreateDiscussionAsync(problemId, 100L, "Title", "Content"));
+            await _service.CreateDiscussionAsync(problemId, userId: 100L, "Title", "Content"));
     }
 
     [Fact]
@@ -249,7 +250,7 @@ public class DiscussionServiceTests
             .ReturnsAsync((Discussion?)null);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _service.UpdateDiscussionAsync(discussionId, 100L, "Title", "Content"));
+            await _service.UpdateDiscussionAsync(discussionId, userId: 100L, "Title", "Content"));
     }
 
     [Fact]
@@ -514,9 +515,23 @@ public class DiscussionServiceTests
             Content = "Content"
         };
 
+        var discussion = new Discussion
+        {
+            Id = discussionId,
+            ProblemId = 5L,
+            UserId = 200L,
+            Title = "Discussion",
+            Content = "Content",
+            CommentCount = 1
+        };
+
         _discussionRepositoryMock
             .Setup(r => r.GetCommentByIdAsync(commentId))
             .ReturnsAsync(comment);
+
+        _discussionRepositoryMock
+            .Setup(r => r.GetByIdAsync(discussionId, false))
+            .ReturnsAsync(discussion);
 
         _discussionRepositoryMock
             .Setup(r => r.DeleteCommentAsync(commentId))
