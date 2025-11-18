@@ -1,0 +1,42 @@
+server:
+  port: "3003"
+  read_timeout: 30s
+  write_timeout: 30s
+
+database:
+  url: "postgresql://localhost:5432/codehakam"
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 300s
+
+rabbitmq:
+  url: "amqp://localhost:5672"
+  queue_name: "judge.submissions"
+  prefetch_count: 1
+
+minio:
+  endpoint: "localhost:9000"
+  access_key: ""
+  secret_key: ""
+  bucket_name: "submissions"
+  use_ssl: false
+
+valkey:
+  url: "redis://localhost:6379"
+  password: ""
+
+judge:
+  worker_count: 4
+  worker_timeout: 60s
+  max_queue_size: 1000
+  default_time_limit: 2s
+  default_memory_limit: 262144
+  max_time_limit: 30s
+  max_memory_limit: 524288
+  max_stack_size: 65536
+  max_output_size: 16384
+
+isolate:
+  path: "/usr/local/bin/isolate"
+  box_root: "/var/local/lib/isolate"
+  max_boxes: 100
