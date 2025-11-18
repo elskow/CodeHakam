@@ -3,6 +3,7 @@ using ContentService.DTOs.Requests;
 using ContentService.DTOs.Responses;
 using ContentService.Models;
 using ContentService.Services.Interfaces;
+using ContentService.Mappers.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,6 +14,7 @@ namespace ContentService.Controllers;
 public class ProblemEditorialsController(
     IEditorialService editorialService,
     IProblemService problemService,
+    IEditorialMapper editorialMapper,
     ILogger<ProblemEditorialsController> logger) : BaseApiController
 {
     /// <summary>
@@ -54,7 +56,7 @@ public class ProblemEditorialsController(
                 }
             }
 
-            return Ok(ApiResponse<EditorialResponse>.SuccessResponse(MapToEditorialResponse(editorial)));
+            return Ok(ApiResponse<EditorialResponse>.SuccessResponse(editorialMapper.ToResponse(editorial)));
         }
         catch (Exception ex)
         {
@@ -104,7 +106,7 @@ public class ProblemEditorialsController(
                 request.SpaceComplexity,
                 request.VideoUrl);
 
-            var response = MapToEditorialResponse(editorial);
+            var response = editorialMapper.ToResponse(editorial);
 
             logger.LogInformation(
                 "Editorial created/updated for problem {ProblemId} by user {UserId}",
@@ -163,7 +165,7 @@ public class ProblemEditorialsController(
                 }
             }
 
-            return Ok(ApiResponse<EditorialResponse>.SuccessResponse(MapToEditorialResponse(editorial)));
+            return Ok(ApiResponse<EditorialResponse>.SuccessResponse(editorialMapper.ToResponse(editorial)));
         }
         catch (Exception ex)
         {
@@ -217,7 +219,7 @@ public class ProblemEditorialsController(
             logger.LogInformation("Editorial {EditorialId} updated by user {UserId}", id, userId);
 
             return Ok(ApiResponse<EditorialResponse>.SuccessResponse(
-                MapToEditorialResponse(editorial),
+                editorialMapper.ToResponse(editorial),
                 "Editorial updated successfully"));
         }
         catch (Exception ex)
@@ -260,7 +262,7 @@ public class ProblemEditorialsController(
 
             var updatedEditorial = await editorialService.GetEditorialByIdAsync(id);
             return Ok(ApiResponse<EditorialResponse>.SuccessResponse(
-                MapToEditorialResponse(updatedEditorial!),
+                editorialMapper.ToResponse(updatedEditorial!),
                 "Editorial published successfully"));
         }
         catch (Exception ex)
@@ -303,7 +305,7 @@ public class ProblemEditorialsController(
 
             var updatedEditorial = await editorialService.GetEditorialByIdAsync(id);
             return Ok(ApiResponse<EditorialResponse>.SuccessResponse(
-                MapToEditorialResponse(updatedEditorial!),
+                editorialMapper.ToResponse(updatedEditorial!),
                 "Editorial unpublished successfully"));
         }
         catch (Exception ex)
@@ -352,20 +354,5 @@ public class ProblemEditorialsController(
         }
     }
 
-    private static EditorialResponse MapToEditorialResponse(Editorial editorial)
-    {
-        return new EditorialResponse
-        {
-            Id = editorial.Id,
-            ProblemId = editorial.ProblemId,
-            AuthorId = editorial.AuthorId,
-            Content = editorial.Content,
-            TimeComplexity = editorial.TimeComplexity,
-            SpaceComplexity = editorial.SpaceComplexity,
-            VideoUrl = editorial.VideoUrl,
-            IsPublished = editorial.IsPublished,
-            CreatedAt = editorial.CreatedAt,
-            UpdatedAt = editorial.UpdatedAt
-        };
-    }
+    
 }

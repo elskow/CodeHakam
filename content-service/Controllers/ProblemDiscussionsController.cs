@@ -3,6 +3,7 @@ using ContentService.DTOs.Requests;
 using ContentService.DTOs.Responses;
 using ContentService.Models;
 using ContentService.Services.Interfaces;
+using ContentService.Mappers.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,6 +14,7 @@ namespace ContentService.Controllers;
 public class ProblemDiscussionsController(
     IDiscussionService discussionService,
     IProblemService problemService,
+    IDiscussionMapper discussionMapper,
     ILogger<ProblemDiscussionsController> logger) : BaseApiController
 {
     /// <summary>
@@ -40,7 +42,7 @@ public class ProblemDiscussionsController(
 
             var response = new PagedResponse<DiscussionResponse>
             {
-                Items = discussions.Select(MapToDiscussionResponse).ToList(),
+                Items = discussionMapper.ToResponses(discussions),
                 Page = page,
                 PageSize = pageSize,
                 TotalCount = totalCount
@@ -87,7 +89,7 @@ public class ProblemDiscussionsController(
                 request.Title,
                 request.Content);
 
-            var response = MapToDiscussionResponse(discussion);
+            var response = discussionMapper.ToResponse(discussion);
 
             logger.LogInformation(
                 "Discussion created: ID {DiscussionId}, Problem {ProblemId}, User {UserId}",
@@ -129,7 +131,7 @@ public class ProblemDiscussionsController(
                 return NotFound(ApiResponse<object>.ErrorResponse("Discussion not found."));
             }
 
-            return Ok(ApiResponse<DiscussionResponse>.SuccessResponse(MapToDiscussionResponseWithComments(discussion)));
+            return Ok(ApiResponse<DiscussionResponse>.SuccessResponse(discussionMapper.ToResponseWithComments(discussion)));
         }
         catch (Exception ex)
         {
@@ -180,7 +182,7 @@ public class ProblemDiscussionsController(
             logger.LogInformation("Discussion {DiscussionId} updated by user {UserId}", id, userId);
 
             return Ok(ApiResponse<DiscussionResponse>.SuccessResponse(
-                MapToDiscussionResponse(updatedDiscussion),
+                discussionMapper.ToResponse(updatedDiscussion),
                 "Discussion updated successfully"));
         }
         catch (Exception ex)
@@ -280,7 +282,7 @@ public class ProblemDiscussionsController(
                 nameof(GetDiscussion),
                 new { problemId, id },
                 ApiResponse<CommentResponse>.SuccessResponse(
-                    MapToCommentResponse(comment),
+                    discussionMapper.ToCommentResponse(comment),
                     "Comment added successfully"));
         }
         catch (Exception ex)
@@ -376,7 +378,7 @@ public class ProblemDiscussionsController(
 
             var updatedDiscussion = await discussionService.GetDiscussionAsync(id);
             return Ok(ApiResponse<DiscussionResponse>.SuccessResponse(
-                MapToDiscussionResponse(updatedDiscussion!),
+                discussionMapper.ToResponse(updatedDiscussion!),
                 "Vote recorded successfully"));
         }
         catch (Exception ex)
@@ -385,50 +387,5 @@ public class ProblemDiscussionsController(
         }
     }
 
-    private static DiscussionResponse MapToDiscussionResponse(Discussion discussion)
-    {
-        return new DiscussionResponse
-        {
-            Id = discussion.Id,
-            ProblemId = discussion.ProblemId,
-            UserId = discussion.UserId,
-            Title = discussion.Title,
-            Content = discussion.Content,
-            VoteCount = discussion.VoteCount,
-            CommentCount = discussion.CommentCount,
-            CreatedAt = discussion.CreatedAt,
-            UpdatedAt = discussion.UpdatedAt,
-            Comments = new List<CommentResponse>()
-        };
-    }
-
-    private static DiscussionResponse MapToDiscussionResponseWithComments(Discussion discussion)
-    {
-        return new DiscussionResponse
-        {
-            Id = discussion.Id,
-            ProblemId = discussion.ProblemId,
-            UserId = discussion.UserId,
-            Title = discussion.Title,
-            Content = discussion.Content,
-            VoteCount = discussion.VoteCount,
-            CommentCount = discussion.CommentCount,
-            CreatedAt = discussion.CreatedAt,
-            UpdatedAt = discussion.UpdatedAt,
-            Comments = discussion.Comments.Select(MapToCommentResponse).ToList()
-        };
-    }
-
-    private static CommentResponse MapToCommentResponse(DiscussionComment comment)
-    {
-        return new CommentResponse
-        {
-            Id = comment.Id,
-            DiscussionId = comment.DiscussionId,
-            UserId = comment.UserId,
-            ParentId = comment.ParentId,
-            Content = comment.Content,
-            CreatedAt = comment.CreatedAt
-        };
-    }
+    
 }

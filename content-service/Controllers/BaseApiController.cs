@@ -64,7 +64,7 @@ public abstract class BaseApiController : ControllerBase
         };
     }
 
-    protected IActionResult ValidateModelState()
+    protected IActionResult? ValidateModelState()
     {
         if (!ModelState.IsValid)
         {

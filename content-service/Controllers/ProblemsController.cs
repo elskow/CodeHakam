@@ -5,6 +5,7 @@ using ContentService.DTOs.Responses;
 using ContentService.Enums;
 using ContentService.Models;
 using ContentService.Services.Interfaces;
+using ContentService.Mappers.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,7 @@ namespace ContentService.Controllers;
 public class ProblemsController(
     IProblemService problemService,
     ContentDbContext dbContext,
+    IProblemMapper problemMapper,
     ILogger<ProblemsController> logger) : BaseApiController
 {
     /// <summary>
@@ -55,13 +57,7 @@ public class ProblemsController(
                 .Where(up => authorIds.Contains(up.UserId))
                 .ToDictionaryAsync(up => up.UserId);
 
-            var response = new PagedResponse<ProblemResponse>
-            {
-                Items = problemsList.Select(p => MapToProblemResponse(p, authorProfiles)).ToList(),
-                Page = page,
-                PageSize = pageSize,
-                TotalCount = totalCount
-            };
+            var response = problemMapper.ToPagedResponse(problemsList, authorProfiles, page, pageSize, totalCount);
 
             return Ok(ApiResponse<PagedResponse<ProblemResponse>>.SuccessResponse(response));
         }
@@ -108,13 +104,7 @@ public class ProblemsController(
                 .Where(up => authorIds.Contains(up.UserId))
                 .ToDictionaryAsync(up => up.UserId);
 
-            var response = new PagedResponse<ProblemResponse>
-            {
-                Items = problemsList.Select(p => MapToProblemResponse(p, authorProfiles)).ToList(),
-                Page = page,
-                PageSize = pageSize,
-                TotalCount = totalCount
-            };
+            var response = problemMapper.ToPagedResponse(problemsList, authorProfiles, page, pageSize, totalCount);
 
             return Ok(ApiResponse<PagedResponse<ProblemResponse>>.SuccessResponse(response));
         }
@@ -149,7 +139,7 @@ public class ProblemsController(
                 authorProfiles[problem.AuthorId] = authorProfile;
             }
 
-            return Ok(ApiResponse<ProblemResponse>.SuccessResponse(MapToProblemResponse(problem, authorProfiles)));
+            return Ok(ApiResponse<ProblemResponse>.SuccessResponse(problemMapper.ToResponse(problem, authorProfiles)));
         }
         catch (Exception ex)
         {
@@ -207,7 +197,7 @@ public class ProblemsController(
                 nameof(GetProblem),
                 new { id = problem.Id },
                 ApiResponse<ProblemResponse>.SuccessResponse(
-                    MapToProblemResponse(problem, authorProfiles),
+                    problemMapper.ToResponse(problem, authorProfiles),
                     "Problem created successfully"));
         }
         catch (Exception ex)
@@ -266,7 +256,7 @@ public class ProblemsController(
             }
 
             return Ok(ApiResponse<ProblemResponse>.SuccessResponse(
-                MapToProblemResponse(problem, authorProfiles),
+                problemMapper.ToResponse(problem, authorProfiles),
                 "Problem updated successfully"));
         }
         catch (Exception ex)
@@ -307,36 +297,5 @@ public class ProblemsController(
 
     
 
-    private static ProblemResponse MapToProblemResponse(Problem problem, Dictionary<long, UserProfile> authorProfiles)
-    {
-        authorProfiles.TryGetValue(problem.AuthorId, out var authorProfile);
-
-        return new ProblemResponse
-        {
-            Id = problem.Id,
-            Title = problem.Title,
-            Slug = problem.Slug,
-            Description = problem.Description,
-            InputFormat = problem.InputFormat,
-            OutputFormat = problem.OutputFormat,
-            Constraints = problem.Constraints,
-            Difficulty = problem.Difficulty.ToString(),
-            TimeLimit = problem.TimeLimit,
-            MemoryLimit = problem.MemoryLimit,
-            AuthorId = problem.AuthorId,
-            AuthorName = authorProfile?.DisplayName,
-            AuthorAvatar = authorProfile?.AvatarUrl,
-            Visibility = problem.Visibility.ToString(),
-            HintText = problem.HintText,
-            Tags = problem.Tags.Select(t => t.Tag).ToList(),
-            ViewCount = problem.ViewCount,
-            SubmissionCount = problem.SubmissionCount,
-            AcceptedCount = problem.AcceptedCount,
-            AcceptanceRate = problem.SubmissionCount > 0
-                ? Math.Round((double)problem.AcceptedCount / problem.SubmissionCount * 100, digits: 2)
-                : 0.0,
-            CreatedAt = problem.CreatedAt,
-            UpdatedAt = problem.UpdatedAt
-        };
-    }
+    
 }

@@ -5,6 +5,8 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using ContentService.Configuration;
 using ContentService.Data;
+using ContentService.Mappers.Implementations;
+using ContentService.Mappers.Interfaces;
 using ContentService.Middleware;
 using ContentService.Repositories.Implementations;
 using ContentService.Repositories.Interfaces;
@@ -130,6 +132,7 @@ public abstract class Program
                     ClockSkew = TimeSpan.Zero
                 };
 
+                options.UseSecurityTokenValidators = true;
                 options.SecurityTokenValidators.Clear();
                 options.SecurityTokenValidators.Add(new JwtSecurityTokenHandler
                 {
@@ -163,6 +166,13 @@ public abstract class Program
         builder.Services.AddScoped<IEditorialService, EditorialService>();
         builder.Services.AddScoped<IDiscussionService, DiscussionService>();
         builder.Services.AddScoped<IProblemListService, ProblemListService>();
+
+        // Register Mappers
+        builder.Services.AddScoped<IProblemMapper, ProblemMapper>();
+        builder.Services.AddScoped<ITestCaseMapper, TestCaseMapper>();
+        builder.Services.AddScoped<IEditorialMapper, EditorialMapper>();
+        builder.Services.AddScoped<IDiscussionMapper, DiscussionMapper>();
+        builder.Services.AddScoped<IProblemListMapper, ProblemListMapper>();
 
         // Register Infrastructure Services
         builder.Services.AddSingleton<IStorageService, MinIoStorageService>();

@@ -3,6 +3,7 @@ using ContentService.DTOs.Requests;
 using ContentService.DTOs.Responses;
 using ContentService.Models;
 using ContentService.Services.Interfaces;
+using ContentService.Mappers.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,6 +14,7 @@ namespace ContentService.Controllers;
 public class ProblemListsController(
     IProblemListService problemListService,
     IProblemService problemService,
+    IProblemListMapper problemListMapper,
     ILogger<ProblemListsController> logger)
     : BaseApiController
 {
@@ -33,7 +35,7 @@ public class ProblemListsController(
 
             var response = new PagedResponse<ProblemListResponse>
             {
-                Items = lists.Select(MapToProblemListResponse).ToList(),
+                Items = problemListMapper.ToResponses(lists),
                 Page = page,
                 PageSize = pageSize,
                 TotalCount = totalCount
@@ -60,7 +62,7 @@ public class ProblemListsController(
         {
             var userId = GetUserIdFromClaims();
             var lists = await problemListService.GetListsByOwnerAsync(userId);
-            var response = lists.Select(MapToProblemListResponse).ToList();
+            var response = problemListMapper.ToResponses(lists);
 
             return Ok(ApiResponse<List<ProblemListResponse>>.SuccessResponse(response));
         }
@@ -96,7 +98,7 @@ public class ProblemListsController(
                 lists = lists.Where(l => l.IsPublic);
             }
 
-            var response = lists.Select(MapToProblemListResponse).ToList();
+            var response = problemListMapper.ToResponses(lists);
 
             return Ok(ApiResponse<List<ProblemListResponse>>.SuccessResponse(response));
         }
@@ -138,7 +140,7 @@ public class ProblemListsController(
                 }
             }
 
-            return Ok(ApiResponse<ProblemListResponse>.SuccessResponse(MapToProblemListResponseWithProblems(list)));
+            return Ok(ApiResponse<ProblemListResponse>.SuccessResponse(problemListMapper.ToResponseWithProblems(list)));
         }
         catch (Exception ex)
         {
@@ -196,7 +198,7 @@ public class ProblemListsController(
                 nameof(GetProblemList),
                 new { id = list.Id },
                 ApiResponse<ProblemListResponse>.SuccessResponse(
-                    MapToProblemListResponse(list),
+                    problemListMapper.ToResponse(list),
                     "Problem list created successfully"));
         }
         catch (Exception ex)
@@ -254,7 +256,7 @@ public class ProblemListsController(
             logger.LogInformation("Problem list {ListId} updated by user {UserId}", id, userId);
 
             return Ok(ApiResponse<ProblemListResponse>.SuccessResponse(
-                MapToProblemListResponse(list),
+                problemListMapper.ToResponse(list),
                 "Problem list updated successfully"));
         }
         catch (Exception ex)
@@ -345,7 +347,7 @@ public class ProblemListsController(
 
             var updatedList = await problemListService.GetListAsync(id);
             return Ok(ApiResponse<ProblemListResponse>.SuccessResponse(
-                MapToProblemListResponseWithProblems(updatedList!),
+                problemListMapper.ToResponseWithProblems(updatedList!),
                 "Problem added to list successfully"));
         }
         catch (Exception ex)
@@ -389,7 +391,7 @@ public class ProblemListsController(
 
             var updatedList = await problemListService.GetListAsync(id);
             return Ok(ApiResponse<ProblemListResponse>.SuccessResponse(
-                MapToProblemListResponseWithProblems(updatedList!),
+                problemListMapper.ToResponseWithProblems(updatedList!),
                 "Problem removed from list successfully"));
         }
         catch (Exception ex)
@@ -398,35 +400,5 @@ public class ProblemListsController(
         }
     }
 
-    private static ProblemListResponse MapToProblemListResponse(ProblemList list)
-    {
-        return new ProblemListResponse
-        {
-            Id = list.Id,
-            Name = list.Title,
-            Description = list.Description,
-            OwnerId = list.OwnerId,
-            IsPublic = list.IsPublic,
-            ProblemCount = list.ProblemIds.Length,
-            CreatedAt = list.CreatedAt,
-            UpdatedAt = list.UpdatedAt,
-            Problems = new List<ProblemResponse>()
-        };
-    }
-
-    private static ProblemListResponse MapToProblemListResponseWithProblems(ProblemList list)
-    {
-        return new ProblemListResponse
-        {
-            Id = list.Id,
-            Name = list.Title,
-            Description = list.Description,
-            OwnerId = list.OwnerId,
-            IsPublic = list.IsPublic,
-            ProblemCount = list.ProblemIds.Length,
-            CreatedAt = list.CreatedAt,
-            UpdatedAt = list.UpdatedAt,
-            Problems = new List<ProblemResponse>() // Note: Would need to fetch problems separately
-        };
-    }
+    
 }

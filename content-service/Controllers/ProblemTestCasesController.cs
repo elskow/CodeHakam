@@ -3,6 +3,7 @@ using ContentService.DTOs.Requests;
 using ContentService.DTOs.Responses;
 using ContentService.Models;
 using ContentService.Services.Interfaces;
+using ContentService.Mappers.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,6 +14,7 @@ namespace ContentService.Controllers;
 public class ProblemTestCasesController(
     ITestCaseService testCaseService,
     IProblemService problemService,
+    ITestCaseMapper testCaseMapper,
     ILogger<ProblemTestCasesController> logger) : BaseApiController
 {
 /// <summary>
@@ -62,7 +64,7 @@ public class ProblemTestCasesController(
                 }
 
                 var testCases = await testCaseService.GetTestCasesAsync(problemId, samplesOnly);
-                var response = testCases.Select(MapToTestCaseResponse).ToList();
+                var response = testCaseMapper.ToResponses(testCases);
 
                 return Ok(ApiResponse<List<TestCaseResponse>>.SuccessResponse(response));
             }
@@ -115,7 +117,7 @@ public class ProblemTestCasesController(
                 request.TestNumber,
                 userId);
 
-            var response = MapToTestCaseResponse(testCase);
+            var response = testCaseMapper.ToResponse(testCase);
 
             logger.LogInformation(
                 "Test case uploaded successfully. ID: {TestCaseId}, Problem: {ProblemId}, User: {UserId}",
@@ -181,17 +183,5 @@ public class ProblemTestCasesController(
         }
     }
 
-    private static TestCaseResponse MapToTestCaseResponse(TestCase testCase)
-    {
-        return new TestCaseResponse
-        {
-            Id = testCase.Id,
-            ProblemId = testCase.ProblemId,
-            TestNumber = testCase.TestNumber,
-            IsSample = testCase.IsSample,
-            InputFileUrl = testCase.InputFileUrl,
-            OutputFileUrl = testCase.OutputFileUrl,
-            CreatedAt = testCase.CreatedAt
-        };
-    }
+    
 }
