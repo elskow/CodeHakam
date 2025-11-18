@@ -48,9 +48,32 @@ public class ProblemListsController(
     }
 
     /// <summary>
-    ///     Get problem lists created by a specific user
+    ///     Get current user's problem lists
     /// </summary>
-    [HttpGet("user/{userId}")]
+    [HttpGet("my")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<List<ProblemListResponse>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetMyLists()
+    {
+        try
+        {
+            var userId = GetUserIdFromClaims();
+            var lists = await problemListService.GetListsByOwnerAsync(userId);
+            var response = lists.Select(MapToProblemListResponse).ToList();
+
+            return Ok(ApiResponse<List<ProblemListResponse>>.SuccessResponse(response));
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex, logger, "GetMyLists");
+        }
+    }
+
+    /// <summary>
+    ///     Get problem lists created by a specific user (public lists only)
+    /// </summary>
+    [HttpGet("users/{userId}")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponse<List<ProblemListResponse>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetUserLists(long userId)
@@ -59,7 +82,7 @@ public class ProblemListsController(
         {
             var lists = await problemListService.GetListsByOwnerAsync(userId);
 
-            // Filter to only show public lists unless requesting own lists
+            // Only show public lists unless requesting own lists
             if (User.Identity?.IsAuthenticated == true)
             {
                 var currentUserId = GetUserIdFromClaims();
@@ -80,29 +103,6 @@ public class ProblemListsController(
         catch (Exception ex)
         {
             return HandleException(ex, logger, "GetUserLists");
-        }
-    }
-
-    /// <summary>
-    ///     Get current user's problem lists
-    /// </summary>
-    [HttpGet("me")]
-    [Authorize]
-    [ProducesResponseType(typeof(ApiResponse<List<ProblemListResponse>>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> GetMyLists()
-    {
-        try
-        {
-            var userId = GetUserIdFromClaims();
-            var lists = await problemListService.GetListsByOwnerAsync(userId);
-            var response = lists.Select(MapToProblemListResponse).ToList();
-
-            return Ok(ApiResponse<List<ProblemListResponse>>.SuccessResponse(response));
-        }
-        catch (Exception ex)
-        {
-            return HandleException(ex, logger, "GetMyLists");
         }
     }
 
@@ -268,7 +268,7 @@ public class ProblemListsController(
     /// </summary>
     [HttpDelete("{id}")]
     [Authorize]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -294,7 +294,7 @@ public class ProblemListsController(
 
             logger.LogInformation("Problem list {ListId} deleted by user {UserId}", id, userId);
 
-            return Ok(ApiResponse<object>.SuccessResponse(new { id }, "Problem list deleted successfully"));
+            return NoContent();
         }
         catch (Exception ex)
         {

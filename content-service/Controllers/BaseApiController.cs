@@ -63,4 +63,19 @@ public abstract class BaseApiController : ControllerBase
             _ => StatusCode(statusCode: 500, ApiResponse<object>.ErrorResponse("An unexpected error occurred. Please try again later."))
         };
     }
+
+    protected IActionResult ValidateModelState()
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ApiResponse<object>.ErrorResponse(
+                "Validation failed",
+                ModelState.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? Array.Empty<string>()
+                )
+            ));
+        }
+        return null;
+    }
 }

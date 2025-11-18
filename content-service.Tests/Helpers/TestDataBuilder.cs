@@ -114,7 +114,8 @@ public static class TestDataBuilder
         string title = "How to optimize this solution?",
         string content = "I am getting TLE on test case 5. Any suggestions?",
         bool isLocked = false,
-        bool isPinned = false)
+        bool isPinned = false,
+        bool isActive = true)
     {
         var discussion = new Discussion
         {
@@ -126,6 +127,7 @@ public static class TestDataBuilder
             CommentCount = 0,
             IsLocked = isLocked,
             IsPinned = isPinned,
+            IsActive = isActive,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };

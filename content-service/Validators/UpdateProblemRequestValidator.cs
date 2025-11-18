@@ -33,7 +33,7 @@ public class UpdateProblemRequestValidator : AbstractValidator<UpdateProblemRequ
             .WithMessage("Constraints cannot exceed 5000 characters.");
 
         RuleFor(x => x.Difficulty)
-            .Must(BeValidDifficulty).When(x => x.Difficulty != null)
+            .IsInEnum().When(x => x.Difficulty.HasValue)
             .WithMessage("Difficulty must be one of: Easy, Medium, Hard.");
 
         RuleFor(x => x.TimeLimit)
@@ -56,7 +56,7 @@ public class UpdateProblemRequestValidator : AbstractValidator<UpdateProblemRequ
             .WithMessage("Each tag must be non-empty and not exceed 50 characters.");
 
         RuleFor(x => x.Visibility)
-            .Must(BeValidVisibility).When(x => !string.IsNullOrEmpty(x.Visibility))
+            .IsInEnum().When(x => x.Visibility.HasValue)
             .WithMessage("Visibility must be one of: Public, Private, ContestOnly.");
 
         RuleFor(x => x.HintText)
@@ -64,23 +64,5 @@ public class UpdateProblemRequestValidator : AbstractValidator<UpdateProblemRequ
             .WithMessage("Hint text cannot exceed 2000 characters.");
     }
 
-    private bool BeValidDifficulty(string? difficulty)
-    {
-        if (string.IsNullOrEmpty(difficulty))
-        {
-            return true;
-        }
-
-        return Enum.TryParse<Difficulty>(difficulty, ignoreCase: true, out _);
-    }
-
-    private bool BeValidVisibility(string? visibility)
-    {
-        if (string.IsNullOrEmpty(visibility))
-        {
-            return true;
-        }
-
-        return Enum.TryParse<ProblemVisibility>(visibility, ignoreCase: true, out _);
-    }
+    
 }

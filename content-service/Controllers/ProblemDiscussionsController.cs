@@ -9,26 +9,34 @@ using Microsoft.AspNetCore.Mvc;
 namespace ContentService.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
-public class DiscussionsController(
+[Route("api/problems/{problemId}/discussions")]
+public class ProblemDiscussionsController(
     IDiscussionService discussionService,
-    ILogger<DiscussionsController> logger)
-    : BaseApiController
+    IProblemService problemService,
+    ILogger<ProblemDiscussionsController> logger) : BaseApiController
 {
     /// <summary>
-    ///     Get all discussions (paginated)
+    ///     Get discussions for a specific problem
     /// </summary>
     [HttpGet]
     [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponse<PagedResponse<DiscussionResponse>>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetDiscussions(
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetProblemDiscussions(
+        long problemId,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
         try
         {
-            var discussions = await discussionService.GetDiscussionsAsync(page, pageSize);
-            var totalCount = await discussionService.GetTotalDiscussionsCountAsync();
+            var problem = await problemService.GetProblemAsync(problemId);
+            if (problem == null)
+            {
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
+            }
+
+            var discussions = await discussionService.GetDiscussionsByProblemAsync(problemId, page, pageSize);
+            var totalCount = await discussionService.GetProblemDiscussionsCountAsync(problemId);
 
             var response = new PagedResponse<DiscussionResponse>
             {
@@ -42,7 +50,59 @@ public class DiscussionsController(
         }
         catch (Exception ex)
         {
-            return HandleException(ex, logger, "GetDiscussions");
+            return HandleException(ex, logger, "GetProblemDiscussions");
+        }
+    }
+
+    /// <summary>
+    ///     Create a discussion for a problem (requires authentication)
+    /// </summary>
+    [HttpPost]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<DiscussionResponse>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> CreateDiscussion(long problemId, [FromBody] CreateDiscussionRequest request)
+    {
+        var validationResult = ValidateModelState();
+        if (validationResult != null)
+        {
+            return validationResult;
+        }
+
+        try
+        {
+            var userId = GetUserIdFromClaims();
+
+            var problem = await problemService.GetProblemAsync(problemId);
+            if (problem == null)
+            {
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
+            }
+
+            var discussion = await discussionService.CreateDiscussionAsync(
+                problemId,
+                userId,
+                request.Title,
+                request.Content);
+
+            var response = MapToDiscussionResponse(discussion);
+
+            logger.LogInformation(
+                "Discussion created: ID {DiscussionId}, Problem {ProblemId}, User {UserId}",
+                discussion.Id, problemId, userId);
+
+            return CreatedAtAction(
+                nameof(GetProblemDiscussions),
+                new { problemId, page = 1, pageSize = 20 },
+                ApiResponse<DiscussionResponse>.SuccessResponse(
+                    response,
+                    "Discussion created successfully"));
+        }
+        catch (Exception ex)
+        {
+            return HandleException(ex, logger, "CreateDiscussion");
         }
     }
 
@@ -53,12 +113,18 @@ public class DiscussionsController(
     [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponse<DiscussionResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetDiscussion(long id)
+    public async Task<IActionResult> GetDiscussion(long problemId, long id)
     {
         try
         {
+            var problem = await problemService.GetProblemAsync(problemId);
+            if (problem == null)
+            {
+                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
+            }
+
             var discussion = await discussionService.GetDiscussionAsync(id, includeComments: true);
-            if (discussion == null)
+            if (discussion == null || discussion.ProblemId != problemId)
             {
                 return NotFound(ApiResponse<object>.ErrorResponse("Discussion not found."));
             }
@@ -72,11 +138,6 @@ public class DiscussionsController(
     }
 
     /// <summary>
-    ///     Create a new discussion (requires authentication)
-    /// </summary>
-
-
-    /// <summary>
     ///     Update a discussion (requires ownership or Admin role)
     /// </summary>
     [HttpPut("{id}")]
@@ -86,17 +147,12 @@ public class DiscussionsController(
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> UpdateDiscussion(long id, [FromBody] UpdateDiscussionRequest request)
+    public async Task<IActionResult> UpdateDiscussion(long problemId, long id, [FromBody] UpdateDiscussionRequest request)
     {
-        if (!ModelState.IsValid)
+        var validationResult = ValidateModelState();
+        if (validationResult != null)
         {
-            return BadRequest(ApiResponse<object>.ErrorResponse(
-                "Validation failed",
-                ModelState.ToDictionary(
-                    kvp => kvp.Key,
-                    kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? Array.Empty<string>()
-                )
-            ));
+            return validationResult;
         }
 
         try
@@ -104,12 +160,12 @@ public class DiscussionsController(
             var userId = GetUserIdFromClaims();
 
             var discussion = await discussionService.GetDiscussionAsync(id);
-            if (discussion == null)
+            if (discussion == null || discussion.ProblemId != problemId)
             {
                 return NotFound(ApiResponse<object>.ErrorResponse("Discussion not found."));
             }
 
-            // Check authorization
+            // Check authorization - only author or admin can update discussion
             if (discussion.UserId != userId && !IsAdmin())
             {
                 return Forbid();
@@ -138,23 +194,23 @@ public class DiscussionsController(
     /// </summary>
     [HttpDelete("{id}")]
     [Authorize]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> DeleteDiscussion(long id)
+    public async Task<IActionResult> DeleteDiscussion(long problemId, long id)
     {
         try
         {
             var userId = GetUserIdFromClaims();
 
             var discussion = await discussionService.GetDiscussionAsync(id);
-            if (discussion == null)
+            if (discussion == null || discussion.ProblemId != problemId)
             {
                 return NotFound(ApiResponse<object>.ErrorResponse("Discussion not found."));
             }
 
-            // Check authorization
+            // Check authorization - only author or admin can delete
             if (discussion.UserId != userId && !IsAdmin())
             {
                 return Forbid();
@@ -164,7 +220,7 @@ public class DiscussionsController(
 
             logger.LogInformation("Discussion {DiscussionId} deleted by user {UserId}", id, userId);
 
-            return Ok(ApiResponse<object>.SuccessResponse(new { id }, "Discussion deleted successfully"));
+            return NoContent();
         }
         catch (Exception ex)
         {
@@ -175,32 +231,27 @@ public class DiscussionsController(
     /// <summary>
     ///     Add a comment to a discussion (requires authentication)
     /// </summary>
-    [HttpPost("{discussionId}/comments")]
+    [HttpPost("{id}/comments")]
     [Authorize]
     [ProducesResponseType(typeof(ApiResponse<CommentResponse>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> AddComment(long discussionId, [FromBody] AddCommentRequest request)
+    public async Task<IActionResult> AddComment(long problemId, long id, [FromBody] AddCommentRequest request)
     {
-        if (!ModelState.IsValid)
+        var validationResult = ValidateModelState();
+        if (validationResult != null)
         {
-            return BadRequest(ApiResponse<object>.ErrorResponse(
-                "Validation failed",
-                ModelState.ToDictionary(
-                    kvp => kvp.Key,
-                    kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? Array.Empty<string>()
-                )
-            ));
+            return validationResult;
         }
 
         try
         {
             var userId = GetUserIdFromClaims();
 
-            // Verify discussion exists
-            var discussion = await discussionService.GetDiscussionAsync(discussionId);
-            if (discussion == null)
+            // Verify discussion exists and belongs to this problem
+            var discussion = await discussionService.GetDiscussionAsync(id);
+            if (discussion == null || discussion.ProblemId != problemId)
             {
                 return NotFound(ApiResponse<object>.ErrorResponse("Discussion not found."));
             }
@@ -216,18 +267,18 @@ public class DiscussionsController(
             }
 
             var comment = await discussionService.AddCommentAsync(
-                discussionId,
+                id,
                 userId,
                 request.Content,
                 request.ParentId);
 
             logger.LogInformation(
                 "Comment added: ID {CommentId}, Discussion {DiscussionId}, User {UserId}",
-                comment.Id, discussionId, userId);
+                comment.Id, id, userId);
 
             return CreatedAtAction(
                 nameof(GetDiscussion),
-                new { id = discussionId },
+                new { problemId, id },
                 ApiResponse<CommentResponse>.SuccessResponse(
                     MapToCommentResponse(comment),
                     "Comment added successfully"));
@@ -241,13 +292,13 @@ public class DiscussionsController(
     /// <summary>
     ///     Delete a comment (requires ownership or Admin role)
     /// </summary>
-    [HttpDelete("{discussionId}/comments/{commentId}")]
+    [HttpDelete("{id}/comments/{commentId}")]
     [Authorize]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> DeleteComment(long discussionId, long commentId)
+    public async Task<IActionResult> DeleteComment(long problemId, long id, long commentId)
     {
         try
         {
@@ -260,12 +311,19 @@ public class DiscussionsController(
             }
 
             // Verify comment belongs to discussion
-            if (comment.DiscussionId != discussionId)
+            if (comment.DiscussionId != id)
             {
                 return BadRequest(ApiResponse<object>.ErrorResponse("Comment does not belong to this discussion."));
             }
 
-            // Check authorization
+            // Verify discussion belongs to problem
+            var discussion = await discussionService.GetDiscussionAsync(id);
+            if (discussion == null || discussion.ProblemId != problemId)
+            {
+                return NotFound(ApiResponse<object>.ErrorResponse("Discussion not found."));
+            }
+
+            // Check authorization - only author or admin can delete comment
             if (comment.UserId != userId && !IsAdmin())
             {
                 return Forbid();
@@ -275,7 +333,7 @@ public class DiscussionsController(
 
             logger.LogInformation("Comment {CommentId} deleted by user {UserId}", commentId, userId);
 
-            return Ok(ApiResponse<object>.SuccessResponse(new { commentId }, "Comment deleted successfully"));
+            return NoContent();
         }
         catch (Exception ex)
         {
@@ -286,23 +344,18 @@ public class DiscussionsController(
     /// <summary>
     ///     Vote on a discussion (upvote/downvote)
     /// </summary>
-    [HttpPost("{id}/vote")]
+    [HttpPut("{id}/vote")]
     [Authorize]
     [ProducesResponseType(typeof(ApiResponse<DiscussionResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> VoteDiscussion(long id, [FromBody] VoteRequest request)
+    public async Task<IActionResult> VoteDiscussion(long problemId, long id, [FromBody] VoteRequest request)
     {
-        if (!ModelState.IsValid)
+        var validationResult = ValidateModelState();
+        if (validationResult != null)
         {
-            return BadRequest(ApiResponse<object>.ErrorResponse(
-                "Validation failed",
-                ModelState.ToDictionary(
-                    kvp => kvp.Key,
-                    kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray() ?? Array.Empty<string>()
-                )
-            ));
+            return validationResult;
         }
 
         try
@@ -310,7 +363,7 @@ public class DiscussionsController(
             var userId = GetUserIdFromClaims();
 
             var discussion = await discussionService.GetDiscussionAsync(id);
-            if (discussion == null)
+            if (discussion == null || discussion.ProblemId != problemId)
             {
                 return NotFound(ApiResponse<object>.ErrorResponse("Discussion not found."));
             }

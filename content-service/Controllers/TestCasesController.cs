@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace ContentService.Controllers;
 
 [ApiController]
-[Route("api/test-cases")]
+[Route("api/problems/{problemId}/test-cases")]
 public class TestCasesController(
     ITestCaseService testCaseService,
     IProblemService problemService,
@@ -24,46 +24,46 @@ public class TestCasesController(
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> GetTestCase(long id)
-    {
-        try
+public async Task<IActionResult> GetTestCase(long problemId, long id)
         {
-            var testCase = await testCaseService.GetTestCaseAsync(id);
-            if (testCase == null)
+            try
             {
-                return NotFound(ApiResponse<object>.ErrorResponse("Test case not found."));
-            }
-
-            // Check authorization - only author/admin or for sample test cases
-            if (!testCase.IsSample)
-            {
-                var userId = GetUserIdFromClaims();
-                var isAuthorOrAdmin = await problemService.IsAuthorOrAdminAsync(testCase.ProblemId, userId, IsAdmin());
-
-                if (!isAuthorOrAdmin)
+                var testCase = await testCaseService.GetTestCaseAsync(id);
+                if (testCase == null || testCase.ProblemId != problemId)
                 {
-                    return Forbid();
+                    return NotFound(ApiResponse<object>.ErrorResponse("Test case not found."));
                 }
+
+                // Check authorization - only author/admin or for sample test cases
+                if (!testCase.IsSample)
+                {
+                    var userId = GetUserIdFromClaims();
+                    var isAuthorOrAdmin = await problemService.IsAuthorOrAdminAsync(testCase.ProblemId, userId, IsAdmin());
+
+                    if (!isAuthorOrAdmin)
+                    {
+                        return Forbid();
+                    }
+                }
+
+                var response = new TestCaseResponse
+                {
+                    Id = testCase.Id,
+                    ProblemId = testCase.ProblemId,
+                    TestNumber = testCase.TestNumber,
+                    IsSample = testCase.IsSample,
+                    InputFileUrl = testCase.InputFileUrl,
+                    OutputFileUrl = testCase.OutputFileUrl,
+                    CreatedAt = testCase.CreatedAt
+                };
+
+                return Ok(ApiResponse<TestCaseResponse>.SuccessResponse(response));
             }
-
-            var response = new TestCaseResponse
+            catch (Exception ex)
             {
-                Id = testCase.Id,
-                ProblemId = testCase.ProblemId,
-                TestNumber = testCase.TestNumber,
-                IsSample = testCase.IsSample,
-                InputFileUrl = testCase.InputFileUrl,
-                OutputFileUrl = testCase.OutputFileUrl,
-                CreatedAt = testCase.CreatedAt
-            };
-
-            return Ok(ApiResponse<TestCaseResponse>.SuccessResponse(response));
+                return HandleException(ex, logger, "GetTestCase");
+            }
         }
-        catch (Exception ex)
-        {
-            return HandleException(ex, logger, "GetTestCase");
-        }
-    }
 
     /// <summary>
     ///     Download test case input file
@@ -74,37 +74,37 @@ public class TestCasesController(
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> DownloadInput(long id)
-    {
-        try
+public async Task<IActionResult> DownloadInput(long problemId, long id)
         {
-            var testCase = await testCaseService.GetTestCaseAsync(id);
-            if (testCase == null)
+            try
             {
-                return NotFound(ApiResponse<object>.ErrorResponse("Test case not found."));
-            }
-
-            // Check authorization
-            if (!testCase.IsSample)
-            {
-                var userId = GetUserIdFromClaims();
-                var isAuthorOrAdmin = await problemService.IsAuthorOrAdminAsync(testCase.ProblemId, userId, IsAdmin());
-
-                if (!isAuthorOrAdmin)
+                var testCase = await testCaseService.GetTestCaseAsync(id);
+                if (testCase == null || testCase.ProblemId != problemId)
                 {
-                    return Forbid();
+                    return NotFound(ApiResponse<object>.ErrorResponse("Test case not found."));
                 }
+
+                // Check authorization
+                if (!testCase.IsSample)
+                {
+                    var userId = GetUserIdFromClaims();
+                    var isAuthorOrAdmin = await problemService.IsAuthorOrAdminAsync(testCase.ProblemId, userId, IsAdmin());
+
+                    if (!isAuthorOrAdmin)
+                    {
+                        return Forbid();
+                    }
+                }
+
+                var (stream, contentType, fileName) = await testCaseService.DownloadTestCaseInputAsync(id);
+
+                return File(stream, contentType, fileName);
             }
-
-            var (stream, contentType, fileName) = await testCaseService.DownloadTestCaseInputAsync(id);
-
-            return File(stream, contentType, fileName);
+            catch (Exception ex)
+            {
+                return HandleException(ex, logger, "DownloadInput");
+            }
         }
-        catch (Exception ex)
-        {
-            return HandleException(ex, logger, "DownloadInput");
-        }
-    }
 
     /// <summary>
     ///     Download test case output file
@@ -115,53 +115,53 @@ public class TestCasesController(
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> DownloadOutput(long id)
-    {
-        try
+public async Task<IActionResult> DownloadOutput(long problemId, long id)
         {
-            var testCase = await testCaseService.GetTestCaseAsync(id);
-            if (testCase == null)
+            try
             {
-                return NotFound(ApiResponse<object>.ErrorResponse("Problem not found."));
-            }
-
-            // Check authorization
-            if (!testCase.IsSample)
-            {
-                var userId = GetUserIdFromClaims();
-                var isAuthorOrAdmin = await problemService.IsAuthorOrAdminAsync(testCase.ProblemId, userId, IsAdmin());
-
-                if (!isAuthorOrAdmin)
+                var testCase = await testCaseService.GetTestCaseAsync(id);
+                if (testCase == null || testCase.ProblemId != problemId)
                 {
-                    return Forbid();
+                    return NotFound(ApiResponse<object>.ErrorResponse("Test case not found."));
                 }
+
+                // Check authorization
+                if (!testCase.IsSample)
+                {
+                    var userId = GetUserIdFromClaims();
+                    var isAuthorOrAdmin = await problemService.IsAuthorOrAdminAsync(testCase.ProblemId, userId, IsAdmin());
+
+                    if (!isAuthorOrAdmin)
+                    {
+                        return Forbid();
+                    }
+                }
+
+                var (stream, contentType, fileName) = await testCaseService.DownloadTestCaseOutputAsync(id);
+
+                return File(stream, contentType, fileName);
             }
-
-            var (stream, contentType, fileName) = await testCaseService.DownloadTestCaseOutputAsync(id);
-
-            return File(stream, contentType, fileName);
+            catch (Exception ex)
+            {
+                return HandleException(ex, logger, "DownloadOutput");
+            }
         }
-        catch (Exception ex)
-        {
-            return HandleException(ex, logger, "DownloadOutput");
-        }
-    }
 
-    /// <summary>
+/// <summary>
     ///     Delete a test case (requires problem ownership or Admin role)
     /// </summary>
     [HttpDelete("{id}")]
     [Authorize]
-    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<IActionResult> DeleteTestCase(long id)
+    public async Task<IActionResult> DeleteTestCase(long problemId, long id)
     {
         try
         {
             var testCase = await testCaseService.GetTestCaseAsync(id);
-            if (testCase == null)
+            if (testCase == null || testCase.ProblemId != problemId)
             {
                 return NotFound(ApiResponse<object>.ErrorResponse("Test case not found."));
             }
@@ -181,7 +181,7 @@ public class TestCasesController(
                 "Test case deleted successfully. ID: {TestCaseId}, User: {UserId}",
                 id, userId);
 
-            return Ok(ApiResponse<object>.SuccessResponse(new { id }, "Test case deleted successfully"));
+            return NoContent();
         }
         catch (Exception ex)
         {

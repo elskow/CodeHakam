@@ -87,8 +87,7 @@ public sealed class DiscussionRepository(ContentDbContext context) : IDiscussion
             return false;
         }
 
-        discussion.IsActive = false;
-        discussion.UpdatedAt = DateTime.UtcNow;
+        context.Discussions.Remove(discussion);
         await context.SaveChangesAsync();
         return true;
     }
