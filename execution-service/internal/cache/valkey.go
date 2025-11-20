@@ -182,3 +182,16 @@ func (v *ValkeyClient) GetStats(ctx context.Context) (map[string]string, error) 
 
 	return stats, nil
 }
+
+// Additional methods for rate limiting
+func (v *ValkeyClient) CacheString(ctx context.Context, key, value string, ttl time.Duration) error {
+	return v.client.Set(ctx, key, value, ttl).Err()
+}
+
+func (v *ValkeyClient) GetCachedString(ctx context.Context, key string) (string, error) {
+	result, err := v.client.Get(ctx, key).Result()
+	if err != nil {
+		return "", err
+	}
+	return result, nil
+}

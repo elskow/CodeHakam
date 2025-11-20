@@ -12,6 +12,7 @@ import (
 type ResourceValidationService struct {
 	config         *config.JudgeConfig
 	contentClient  *httpclient.ContentServiceClient
+	cbService      *CircuitBreakerService
 	maxTimeLimit   int
 	maxMemoryLimit int
 	maxStackSize   int
@@ -37,9 +38,11 @@ type ResourceViolation struct {
 }
 
 func NewResourceValidationService(cfg *config.JudgeConfig, contentClient *httpclient.ContentServiceClient) *ResourceValidationService {
+	cbService := NewCircuitBreakerService()
 	return &ResourceValidationService{
 		config:         cfg,
 		contentClient:  contentClient,
+		cbService:      cbService,
 		maxTimeLimit:   int(cfg.MaxTimeLimit.Milliseconds()),
 		maxMemoryLimit: cfg.MaxMemoryLimit,
 		maxStackSize:   cfg.MaxStackSize,

@@ -380,3 +380,185 @@ func (db *DB) UpdatePlagiarismReportStatus(ctx context.Context, reportID int64, 
 
 	return nil
 }
+
+// Recovery service methods
+func (db *DB) GetUnhealthyWorkers(ctx context.Context, threshold time.Duration) ([]models.JudgeWorker, error) {
+	query := `
+		SELECT id, worker_name, status, current_submission_id, started_at, last_heartbeat, box_id
+		FROM execution.judge_workers 
+		WHERE status != 'idle' 
+		AND last_heartbeat < $1
+		ORDER BY last_heartbeat ASC`
+
+	var workers []models.JudgeWorker
+	err := db.conn.SelectContext(ctx, &workers, query, time.Now().Add(-threshold))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get unhealthy workers: %w", err)
+	}
+
+	return workers, nil
+}
+
+func (db *DB) ResetWorkerState(ctx context.Context, workerID int) error {
+	query := `
+		UPDATE execution.judge_workers 
+		SET status = 'idle', current_submission_id = NULL, last_heartbeat = NOW()
+		WHERE id = $1`
+
+	_, err := db.conn.ExecContext(ctx, query, workerID)
+	if err != nil {
+		return fmt.Errorf("failed to reset worker state: %w", err)
+	}
+
+	return nil
+}
+
+func (db *DB) GetActiveBoxes(ctx context.Context) ([]int, error) {
+	query := `
+		SELECT DISTINCT box_id 
+		FROM execution.judge_workers 
+		WHERE box_id IS NOT NULL AND status != 'idle'`
+
+	var boxes []int
+	err := db.conn.SelectContext(ctx, &boxes, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active boxes: %w", err)
+	}
+
+	return boxes, nil
+}
+
+func (db *DB) IsBoxInUse(ctx context.Context, boxID int) (bool, error) {
+	query := `
+		SELECT COUNT(*) 
+		FROM execution.judge_workers 
+		WHERE box_id = $1 AND status != 'idle'`
+
+	var count int
+	err := db.conn.GetContext(ctx, &count, query, boxID)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if box is in use: %w", err)
+	}
+
+	return count > 0, nil
+}
+
+func (db *DB) ReleaseBox(ctx context.Context, boxID int) error {
+	query := `
+		UPDATE execution.judge_workers 
+		SET box_id = NULL 
+		WHERE box_id = $1`
+
+	_, err := db.conn.ExecContext(ctx, query, boxID)
+	if err != nil {
+		return fmt.Errorf("failed to release box: %w", err)
+	}
+
+	return nil
+}
+
+func (db *DB) GetStuckSubmissions(ctx context.Context, threshold time.Duration) ([]models.Submission, error) {
+	query := `
+		SELECT id, user_id, problem_id, contest_id, language, code_url, verdict, 
+			   score, execution_time_ms, memory_used_kb, test_cases_passed, test_cases_total,
+			   compile_output, is_public, submitted_at, judged_at
+		FROM execution.submissions 
+		WHERE verdict = 'pending' 
+		AND submitted_at < $1
+		ORDER BY submitted_at ASC`
+
+	var submissions []models.Submission
+	err := db.conn.SelectContext(ctx, &submissions, query, time.Now().Add(-threshold))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stuck submissions: %w", err)
+	}
+
+	return submissions, nil
+}
+
+func (db *DB) ResetSubmissionState(ctx context.Context, submissionID int64) error {
+	query := `
+		UPDATE execution.submissions 
+		SET verdict = 'pending', judged_at = NULL, execution_time_ms = NULL, 
+			memory_used_kb = NULL, test_cases_passed = 0, test_cases_total = NULL,
+			compile_output = NULL
+		WHERE id = $1`
+
+	_, err := db.conn.ExecContext(ctx, query, submissionID)
+	if err != nil {
+		return fmt.Errorf("failed to reset submission state: %w", err)
+	}
+
+	return nil
+}
+
+func (db *DB) ClearExecutionLogs(ctx context.Context, submissionID int64) error {
+	query := `DELETE FROM execution.execution_logs WHERE submission_id = $1`
+
+	_, err := db.conn.ExecContext(ctx, query, submissionID)
+	if err != nil {
+		return fmt.Errorf("failed to clear execution logs: %w", err)
+	}
+
+	return nil
+}
+
+func (db *DB) GetWorker(ctx context.Context, workerID int) (*models.JudgeWorker, error) {
+	query := `
+		SELECT id, worker_name, status, current_submission_id, started_at, last_heartbeat, box_id
+		FROM execution.judge_workers 
+		WHERE id = $1`
+
+	var worker models.JudgeWorker
+	err := db.conn.GetContext(ctx, &worker, query, workerID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("worker not found")
+		}
+		return nil, fmt.Errorf("failed to get worker: %w", err)
+	}
+
+	return &worker, nil
+}
+
+func (db *DB) GetWorkerStats(ctx context.Context) (map[string]interface{}, error) {
+	query := `
+		SELECT 
+			COUNT(*) as total_workers,
+			COUNT(CASE WHEN status = 'idle' THEN 1 END) as idle_workers,
+			COUNT(CASE WHEN status = 'busy' THEN 1 END) as busy_workers,
+			COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_workers,
+			COUNT(CASE WHEN status = 'recovering' THEN 1 END) as recovering_workers
+		FROM execution.judge_workers`
+
+	stats := make(map[string]interface{})
+	err := db.conn.GetContext(ctx, stats, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get worker stats: %w", err)
+	}
+
+	return stats, nil
+}
+
+func (db *DB) GetSubmissionStats(ctx context.Context) (map[string]interface{}, error) {
+	query := `
+		SELECT 
+			COUNT(*) as total_submissions,
+			COUNT(CASE WHEN verdict = 'pending' THEN 1 END) as pending_submissions,
+			COUNT(CASE WHEN verdict = 'AC' THEN 1 END) as accepted_submissions,
+			COUNT(CASE WHEN verdict = 'WA' THEN 1 END) as wrong_answer_submissions,
+			COUNT(CASE WHEN verdict = 'TLE' THEN 1 END) as time_limit_submissions,
+			COUNT(CASE WHEN verdict = 'MLE' THEN 1 END) as memory_limit_submissions,
+			COUNT(CASE WHEN verdict = 'RE' THEN 1 END) as runtime_error_submissions,
+			COUNT(CASE WHEN verdict = 'CE' THEN 1 END) as compilation_error_submissions
+		FROM execution.submissions
+		WHERE submitted_at > NOW() - INTERVAL '24 hours'`
+
+	stats := make(map[string]interface{})
+	err := db.conn.GetContext(ctx, stats, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get submission stats: %w", err)
+	}
+
+	return stats, nil
+}

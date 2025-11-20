@@ -114,15 +114,40 @@ func (cbs *CircuitBreakerService) IsHealthy() bool {
 }
 
 func (cbs *CircuitBreakerService) Reset(name string) error {
+	// gobreaker doesn't have a Reset method, so we create new breakers
 	switch name {
 	case "minio":
-		cbs.minioBreaker.Reset()
+		cbs.minioBreaker = gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "minio",
+			Timeout: 30 * time.Second,
+			ReadyToTrip: func(counts gobreaker.Counts) bool {
+				return counts.ConsecutiveFailures > 5
+			},
+		})
 	case "rabbitmq":
-		cbs.rabbitmqBreaker.Reset()
+		cbs.rabbitmqBreaker = gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "rabbitmq",
+			Timeout: 30 * time.Second,
+			ReadyToTrip: func(counts gobreaker.Counts) bool {
+				return counts.ConsecutiveFailures > 5
+			},
+		})
 	case "content":
-		cbs.contentBreaker.Reset()
+		cbs.contentBreaker = gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "content",
+			Timeout: 30 * time.Second,
+			ReadyToTrip: func(counts gobreaker.Counts) bool {
+				return counts.ConsecutiveFailures > 5
+			},
+		})
 	case "isolate":
-		cbs.isolateBreaker.Reset()
+		cbs.isolateBreaker = gobreaker.NewCircuitBreaker(gobreaker.Settings{
+			Name:    "isolate",
+			Timeout: 30 * time.Second,
+			ReadyToTrip: func(counts gobreaker.Counts) bool {
+				return counts.ConsecutiveFailures > 5
+			},
+		})
 	default:
 		return fmt.Errorf("unknown circuit breaker: %s", name)
 	}
@@ -170,4 +195,36 @@ func (cbm *CircuitBreakerMiddleware) WrapIsolateOperation(operation func() error
 		return fmt.Errorf("isolate operation failed: %w (circuit breaker state: %s)", result.Error, result.State)
 	}
 	return nil
+}
+
+// Additional methods for external service integration
+func (cbs *CircuitBreakerService) GetCircuitBreaker(name string) *gobreaker.CircuitBreaker {
+	switch name {
+	case "content-service":
+		return cbs.contentBreaker
+	case "minio":
+		return cbs.minioBreaker
+	case "rabbitmq":
+		return cbs.rabbitmqBreaker
+	case "isolate":
+		return cbs.isolateBreaker
+	default:
+		// Create a new circuit breaker for unknown services
+		settings := gobreaker.Settings{
+			Name:        name,
+			MaxRequests: 5,
+			Interval:    30 * time.Second,
+			Timeout:     10 * time.Second,
+			ReadyToTrip: func(counts gobreaker.Counts) bool {
+				return counts.ConsecutiveFailures > 3
+			},
+			OnStateChange: func(name string, from, to gobreaker.State) {
+				log.Printf("Circuit breaker '%s' changed from %s to %s", name, from, to)
+			},
+			IsSuccessful: func(err error) bool {
+				return err == nil
+			},
+		}
+		return gobreaker.NewCircuitBreaker(settings)
+	}
 }

@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"execution_service/internal/database"
 	"execution_service/internal/middleware"
 	"execution_service/internal/models"
 	"execution_service/internal/queue"
+	"execution_service/internal/services"
+	"execution_service/internal/storage"
 	"execution_service/internal/validation"
 	"execution_service/internal/worker"
 
@@ -19,16 +22,21 @@ type Handler struct {
 	db       *database.DB
 	queue    *queue.RabbitMQClient
 	pool     *worker.JudgePool
+	storage  *storage.MinIOClient
 	security *middleware.SecurityMiddleware
+	audit    *services.AuditLogService
 }
 
-func NewHandler(db *database.DB, q *queue.RabbitMQClient, p *worker.JudgePool) *Handler {
-	securityMiddleware := middleware.NewSecurityMiddleware("default-secret-change-in-production")
+func NewHandler(db *database.DB, q *queue.RabbitMQClient, p *worker.JudgePool, s *storage.MinIOClient, jwtSecret string) *Handler {
+	securityMiddleware := middleware.NewSecurityMiddleware(jwtSecret)
+	auditService := services.NewAuditLogService(db)
 	return &Handler{
 		db:       db,
 		queue:    q,
 		pool:     p,
+		storage:  s,
 		security: securityMiddleware,
+		audit:    auditService,
 	}
 }
 
@@ -45,6 +53,7 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	{
 		submissions := api.Group("/submissions")
 		{
+			submissions.POST("", h.CreateSubmission)
 			submissions.GET("/:id", h.GetSubmission)
 			submissions.GET("/user/:userId", h.GetUserSubmissions)
 			submissions.GET("/problem/:problemId", h.GetProblemSubmissions)
@@ -75,6 +84,128 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 
 	r.GET("/health", h.HealthCheck)
 	r.GET("/metrics", h.Metrics)
+	r.GET("/circuit-breakers", h.CircuitBreakerStatus)
+}
+
+func (h *Handler) CreateSubmission(c *gin.Context) {
+	var request struct {
+		UserID        int64  `json:"user_id" binding:"required,min=1"`
+		ProblemID     int64  `json:"problem_id" binding:"required,min=1"`
+		ContestID     *int64 `json:"contest_id,omitempty"`
+		Language      string `json:"language" binding:"required"`
+		Code          string `json:"code" binding:"required"`
+		TimeLimitMs   int    `json:"time_limit_ms,omitempty"`
+		MemoryLimitKb int    `json:"memory_limit_kb,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate language
+	if err := validation.ValidateLanguage(request.Language); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate code
+	codeBytes := []byte(request.Code)
+	if err := validation.ValidateCode(codeBytes, request.Language); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Set default limits if not provided
+	timeLimit := request.TimeLimitMs
+	if timeLimit <= 0 {
+		timeLimit = 2000 // Default 2 seconds
+	}
+	memoryLimit := request.MemoryLimitKb
+	if memoryLimit <= 0 {
+		memoryLimit = 262144 // Default 256MB
+	}
+
+	// Validate limits
+	if timeLimit > 30000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "time limit must be <= 30000ms"})
+		return
+	}
+	if memoryLimit > 524288 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "memory limit must be <= 524288KB"})
+		return
+	}
+
+	// Create submission record
+	submission := &models.Submission{
+		UserID:          request.UserID,
+		ProblemID:       request.ProblemID,
+		ContestID:       request.ContestID,
+		Language:        request.Language,
+		Verdict:         models.VerdictPending,
+		Score:           0,
+		TestCasesPassed: 0,
+		IsPublic:        false,
+	}
+
+	// Upload code to storage
+	codeURL, err := h.storage.UploadCode(c.Request.Context(), submission.ID, request.Language, codeBytes)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upload code"})
+		return
+	}
+	submission.CodeURL = codeURL
+
+	// Save submission to database
+	err = h.db.CreateSubmission(c.Request.Context(), submission)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create submission"})
+		return
+	}
+
+	// Determine priority based on contest
+	priority := 0 // Default practice priority
+	if request.ContestID != nil {
+		priority = 5 // Contest priority
+	}
+
+	// Create judge request
+	judgeRequest := &models.JudgeRequest{
+		SubmissionID:  submission.ID,
+		UserID:        request.UserID,
+		ProblemID:     request.ProblemID,
+		Language:      request.Language,
+		CodeURL:       codeURL,
+		TimeLimitMs:   timeLimit,
+		MemoryLimitKb: memoryLimit,
+		Priority:      priority,
+	}
+
+	// Validate judge request
+	if err := validation.ValidateJudgeRequest(judgeRequest); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Publish to RabbitMQ
+	err = h.queue.PublishSubmission(c.Request.Context(), judgeRequest)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to queue submission"})
+		return
+	}
+
+	// Log submission creation
+	h.db.CreateExecutionLog(c.Request.Context(), &models.ExecutionLog{
+		SubmissionID: submission.ID,
+		Level:        "INFO",
+		Message:      fmt.Sprintf("Submission created for user %d, problem %d, language %s", request.UserID, request.ProblemID, request.Language),
+	})
+
+	c.JSON(http.StatusCreated, gin.H{
+		"submission_id": submission.ID,
+		"status":        "queued",
+		"message":       "Submission queued for judging",
+	})
 }
 
 func (h *Handler) GetSubmission(c *gin.Context) {
@@ -166,6 +297,13 @@ func (h *Handler) RejudgeSubmission(c *gin.Context) {
 		return
 	}
 
+	// Get user info for audit logging
+	userIDValue, _ := c.Get("user_id")
+	var userID int64
+	if v, ok := userIDValue.(float64); ok {
+		userID = int64(v)
+	}
+
 	request := &models.JudgeRequest{
 		SubmissionID:  id,
 		UserID:        submission.UserID,
@@ -175,6 +313,29 @@ func (h *Handler) RejudgeSubmission(c *gin.Context) {
 		TimeLimitMs:   2000,
 		MemoryLimitKb: 262144,
 		Priority:      5,
+	}
+
+	// Log admin action before execution
+	auditEvent := &services.AuditEvent{
+		UserID:     userID,
+		Action:     services.AdminActionSubmissionRejudge,
+		Resource:   "submission",
+		ResourceID: &id,
+		IPAddress:  c.ClientIP(),
+		UserAgent:  c.GetHeader("User-Agent"),
+		Details: map[string]interface{}{
+			"submission_id": id,
+			"problem_id":    submission.ProblemID,
+			"user_id":       submission.UserID,
+			"language":      submission.Language,
+		},
+		Timestamp: time.Now(),
+		Severity:  services.SeverityInfo,
+	}
+
+	if err := h.audit.LogAdminAction(c.Request.Context(), auditEvent); err != nil {
+		// Log error but don't fail the request
+		fmt.Printf("Failed to log admin action: %v\n", err)
 	}
 
 	err = h.queue.PublishSubmission(c.Request.Context(), request)
@@ -208,6 +369,13 @@ func (h *Handler) ScaleWorkers(c *gin.Context) {
 		return
 	}
 
+	// Get user info for audit logging
+	userIDValue, _ := c.Get("user_id")
+	var userID int64
+	if v, ok := userIDValue.(float64); ok {
+		userID = int64(v)
+	}
+
 	// Get current status
 	currentStatus := h.pool.GetStatus()
 	currentWorkers := currentStatus["total_workers"].(int)
@@ -219,6 +387,26 @@ func (h *Handler) ScaleWorkers(c *gin.Context) {
 			"requested_workers": request.WorkerCount,
 		})
 		return
+	}
+
+	// Log admin action before execution
+	auditEvent := &services.AuditEvent{
+		UserID:    userID,
+		Action:    services.AdminActionWorkerScale,
+		Resource:  "judge_workers",
+		IPAddress: c.ClientIP(),
+		UserAgent: c.GetHeader("User-Agent"),
+		Details: map[string]interface{}{
+			"previous_count": currentWorkers,
+			"new_count":      request.WorkerCount,
+		},
+		Timestamp: time.Now(),
+		Severity:  services.SeverityInfo,
+	}
+
+	if err := h.audit.LogAdminAction(c.Request.Context(), auditEvent); err != nil {
+		// Log error but don't fail the request
+		fmt.Printf("Failed to log admin action: %v\n", err)
 	}
 
 	// Perform scaling operation
@@ -286,10 +474,37 @@ func (h *Handler) ClearBox(c *gin.Context) {
 		return
 	}
 
+	// Get user info for audit logging
+	userIDValue, _ := c.Get("user_id")
+	var userID int64
+	if v, ok := userIDValue.(float64); ok {
+		userID = int64(v)
+	}
+
 	isolateSandbox := h.pool.GetSandbox()
 	if isolateSandbox == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Sandbox not available"})
 		return
+	}
+
+	// Log admin action before execution
+	auditEvent := &services.AuditEvent{
+		UserID:     userID,
+		Action:     services.AdminActionBoxCleanup,
+		Resource:   "sandbox_box",
+		ResourceID: &[]int64{int64(boxID)}[0],
+		IPAddress:  c.ClientIP(),
+		UserAgent:  c.GetHeader("User-Agent"),
+		Details: map[string]interface{}{
+			"box_id": boxID,
+		},
+		Timestamp: time.Now(),
+		Severity:  services.SeverityInfo,
+	}
+
+	if err := h.audit.LogAdminAction(c.Request.Context(), auditEvent); err != nil {
+		// Log error but don't fail the request
+		fmt.Printf("Failed to log admin action: %v\n", err)
 	}
 
 	isolateSandbox.CleanupBox(boxID)
@@ -344,4 +559,18 @@ func (h *Handler) Metrics(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, metrics)
+}
+
+func (h *Handler) CircuitBreakerStatus(c *gin.Context) {
+	// This would require access to the circuit breaker service
+	// For now, return a placeholder response
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Circuit breaker status endpoint",
+		"services": map[string]string{
+			"content-service": "closed",
+			"minio":           "closed",
+			"rabbitmq":        "closed",
+			"database":        "closed",
+		},
+	})
 }

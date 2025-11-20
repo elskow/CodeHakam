@@ -3,9 +3,11 @@ package middleware
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"execution_service/internal/rbac"
 	"execution_service/internal/sandbox"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -14,6 +16,7 @@ import (
 type SecurityMiddleware struct {
 	securityValidator *sandbox.SecurityValidator
 	jwtSecret         []byte
+	rbacService       *rbac.RBACService
 }
 
 type userRequests struct {
@@ -29,7 +32,12 @@ func NewSecurityMiddleware(jwtSecret string) *SecurityMiddleware {
 	return &SecurityMiddleware{
 		securityValidator: validator,
 		jwtSecret:         []byte(jwtSecret),
+		rbacService:       nil, // Will be set later
 	}
+}
+
+func (sm *SecurityMiddleware) SetRBACService(rbacService *rbac.RBACService) {
+	sm.rbacService = rbacService
 }
 
 func (sm *SecurityMiddleware) SecurityHeaders() gin.HandlerFunc {
@@ -280,15 +288,125 @@ func (sm *SecurityMiddleware) RequireAuth() gin.HandlerFunc {
 
 func (sm *SecurityMiddleware) RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		role, exists := c.Get("role")
+		userIDValue, exists := c.Get("user_id")
 		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User role not found"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found"})
 			c.Abort()
 			return
 		}
 
-		if role != "admin" && role != "super_admin" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+		// Convert user_id to int64
+		var userID int64
+		switch v := userIDValue.(type) {
+		case string:
+			if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+				userID = id
+			} else {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID format"})
+				c.Abort()
+				return
+			}
+		case float64:
+			userID = int64(v)
+		case int64:
+			userID = v
+		default:
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID type"})
+			c.Abort()
+			return
+		}
+
+		// Check RBAC if available
+		if sm.rbacService != nil {
+			hasAdminRole, err := sm.rbacService.HasRole(userID, "admin")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check permissions"})
+				c.Abort()
+				return
+			}
+
+			hasSuperAdminRole, err := sm.rbacService.HasRole(userID, "super_admin")
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check permissions"})
+				c.Abort()
+				return
+			}
+
+			if !hasAdminRole && !hasSuperAdminRole {
+				c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+				c.Abort()
+				return
+			}
+		} else {
+			// Fallback to role-based check for backward compatibility
+			role, exists := c.Get("role")
+			if !exists {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "User role not found"})
+				c.Abort()
+				return
+			}
+
+			if role != "admin" && role != "super_admin" {
+				c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+				c.Abort()
+				return
+			}
+		}
+
+		c.Next()
+	}
+}
+
+func (sm *SecurityMiddleware) RequirePermission(resource, action string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if sm.rbacService == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "RBAC service not available"})
+			c.Abort()
+			return
+		}
+
+		userIDValue, exists := c.Get("user_id")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found"})
+			c.Abort()
+			return
+		}
+
+		// Convert user_id to int64
+		var userID int64
+		switch v := userIDValue.(type) {
+		case string:
+			if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+				userID = id
+			} else {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID format"})
+				c.Abort()
+				return
+			}
+		case float64:
+			userID = int64(v)
+		case int64:
+			userID = v
+		default:
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID type"})
+			c.Abort()
+			return
+		}
+
+		// Check permission using RBAC
+		allowed, err := sm.rbacService.CheckPermission(userID, resource, action)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check permissions"})
+			c.Abort()
+			return
+		}
+
+		if !allowed {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error":    "Insufficient permissions",
+				"resource": resource,
+				"action":   action,
+			})
 			c.Abort()
 			return
 		}

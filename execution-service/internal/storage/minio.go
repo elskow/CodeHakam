@@ -16,8 +16,8 @@ import (
 )
 
 type MinIOClient struct {
-	client *minio.Client
-	bucket string
+	Client *minio.Client
+	Bucket string
 }
 
 func NewMinIOClient(cfg *config.MinIOConfig) (*MinIOClient, error) {
@@ -45,8 +45,8 @@ func NewMinIOClient(cfg *config.MinIOConfig) (*MinIOClient, error) {
 	}
 
 	return &MinIOClient{
-		client: client,
-		bucket: cfg.BucketName,
+		Client: client,
+		Bucket: cfg.BucketName,
 	}, nil
 }
 
@@ -54,7 +54,7 @@ func (m *MinIOClient) UploadCode(ctx context.Context, submissionID int64, langua
 	filename := fmt.Sprintf("%d.%s", submissionID, getFileExtension(language))
 	objectName := fmt.Sprintf("submissions/%s", filename)
 
-	_, err := m.client.PutObject(ctx, m.bucket, objectName, bytes.NewReader(code), int64(len(code)), minio.PutObjectOptions{
+	_, err := m.Client.PutObject(ctx, m.Bucket, objectName, bytes.NewReader(code), int64(len(code)), minio.PutObjectOptions{
 		ContentType: "text/plain",
 	})
 	if err != nil {
@@ -70,7 +70,7 @@ func (m *MinIOClient) DownloadCode(ctx context.Context, codeURL string) ([]byte,
 		return nil, fmt.Errorf("invalid code URL: %w", err)
 	}
 
-	obj, err := m.client.GetObject(ctx, m.bucket, objectName, minio.GetObjectOptions{})
+	obj, err := m.Client.GetObject(ctx, m.Bucket, objectName, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get object: %w", err)
 	}
@@ -88,14 +88,14 @@ func (m *MinIOClient) UploadTestCase(ctx context.Context, problemID int64, testN
 	inputName := fmt.Sprintf("problems/%d/testcases/%d/input.txt", problemID, testNumber)
 	outputName := fmt.Sprintf("problems/%d/testcases/%d/output.txt", problemID, testNumber)
 
-	_, err = m.client.PutObject(ctx, m.bucket, inputName, bytes.NewReader(input), int64(len(input)), minio.PutObjectOptions{
+	_, err = m.Client.PutObject(ctx, m.Bucket, inputName, bytes.NewReader(input), int64(len(input)), minio.PutObjectOptions{
 		ContentType: "text/plain",
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("failed to upload input: %w", err)
 	}
 
-	_, err = m.client.PutObject(ctx, m.bucket, outputName, bytes.NewReader(output), int64(len(output)), minio.PutObjectOptions{
+	_, err = m.Client.PutObject(ctx, m.Bucket, outputName, bytes.NewReader(output), int64(len(output)), minio.PutObjectOptions{
 		ContentType: "text/plain",
 	})
 	if err != nil {
@@ -116,7 +116,7 @@ func (m *MinIOClient) DownloadTestCase(ctx context.Context, inputURL, outputURL 
 		return nil, nil, fmt.Errorf("invalid output URL: %w", err)
 	}
 
-	inputObj, err := m.client.GetObject(ctx, m.bucket, inputName, minio.GetObjectOptions{})
+	inputObj, err := m.Client.GetObject(ctx, m.Bucket, inputName, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get input object: %w", err)
 	}
@@ -127,7 +127,7 @@ func (m *MinIOClient) DownloadTestCase(ctx context.Context, inputURL, outputURL 
 		return nil, nil, fmt.Errorf("failed to read input object: %w", err)
 	}
 
-	outputObj, err := m.client.GetObject(ctx, m.bucket, outputName, minio.GetObjectOptions{})
+	outputObj, err := m.Client.GetObject(ctx, m.Bucket, outputName, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get output object: %w", err)
 	}
@@ -147,7 +147,7 @@ func (m *MinIOClient) DeleteFile(ctx context.Context, fileURL string) error {
 		return fmt.Errorf("invalid file URL: %w", err)
 	}
 
-	err = m.client.RemoveObject(ctx, m.bucket, objectName, minio.RemoveObjectOptions{})
+	err = m.Client.RemoveObject(ctx, m.Bucket, objectName, minio.RemoveObjectOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to delete file: %w", err)
 	}
@@ -162,7 +162,7 @@ func (m *MinIOClient) GetFileURL(ctx context.Context, fileURL string) (string, e
 	}
 
 	reqParams := make(url.Values)
-	presignedURL, err := m.client.PresignedGetObject(ctx, m.bucket, objectName, 24*time.Hour, reqParams)
+	presignedURL, err := m.Client.PresignedGetObject(ctx, m.Bucket, objectName, 24*time.Hour, reqParams)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate presigned URL: %w", err)
 	}
@@ -180,15 +180,15 @@ func (m *MinIOClient) parseURL(fileURL string) (string, error) {
 		return "", fmt.Errorf("failed to parse URL: %w", err)
 	}
 
-	if parsed.Host != m.bucket {
-		return "", fmt.Errorf("bucket mismatch: expected %s, got %s", m.bucket, parsed.Host)
+	if parsed.Host != m.Bucket {
+		return "", fmt.Errorf("bucket mismatch: expected %s, got %s", m.Bucket, parsed.Host)
 	}
 
 	return strings.TrimPrefix(parsed.Path, "/"), nil
 }
 
 func (m *MinIOClient) getObjectURL(objectName string) string {
-	return fmt.Sprintf("s3://%s/%s", m.bucket, objectName)
+	return fmt.Sprintf("s3://%s/%s", m.Bucket, objectName)
 }
 
 func getFileExtension(language string) string {
@@ -210,7 +210,7 @@ func getFileExtension(language string) string {
 func (m *MinIOClient) ListTestCases(ctx context.Context, problemID int64) ([]string, error) {
 	prefix := fmt.Sprintf("problems/%d/testcases/", problemID)
 
-	objects := m.client.ListObjects(ctx, m.bucket, minio.ListObjectsOptions{
+	objects := m.Client.ListObjects(ctx, m.Bucket, minio.ListObjectsOptions{
 		Prefix: prefix,
 	})
 

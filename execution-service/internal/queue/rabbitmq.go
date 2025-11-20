@@ -214,6 +214,15 @@ func (r *RabbitMQClient) PurgeQueue() error {
 	return nil
 }
 
+func (r *RabbitMQClient) PurgeQueueByName(queueName string) error {
+	_, err := r.channel.QueuePurge(queueName, false)
+	if err != nil {
+		return fmt.Errorf("failed to purge queue %s: %w", queueName, err)
+	}
+
+	return nil
+}
+
 func (r *RabbitMQClient) IsHealthy() bool {
 	if r.conn == nil || r.conn.IsClosed() {
 		return false
@@ -321,4 +330,81 @@ func (r *RabbitMQClient) reconnect() error {
 
 	log.Printf("Successfully reconnected to RabbitMQ")
 	return nil
+}
+
+// Additional methods for dead letter queue and retry queue management
+func (r *RabbitMQClient) DeclareExchange(ctx context.Context, name, kind string, durable, autoDelete, internal, noWait bool, args amqp.Table) error {
+	return r.channel.ExchangeDeclare(
+		name,
+		kind,
+		durable,
+		autoDelete,
+		internal,
+		noWait,
+		args,
+	)
+}
+
+func (r *RabbitMQClient) DeclareQueue(ctx context.Context, name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (amqp.Queue, error) {
+	return r.channel.QueueDeclare(
+		name,
+		durable,
+		autoDelete,
+		exclusive,
+		noWait,
+		args,
+	)
+}
+
+func (r *RabbitMQClient) BindQueue(ctx context.Context, queueName, exchangeName, routingKey string) error {
+	return r.channel.QueueBind(
+		queueName,
+		exchangeName,
+		routingKey,
+		false,
+		nil,
+	)
+}
+
+func (r *RabbitMQClient) ConsumeFromQueue(ctx context.Context, queueName, consumer string) (<-chan amqp.Delivery, error) {
+	return r.channel.Consume(
+		queueName,
+		consumer,
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+}
+
+func (r *RabbitMQClient) PublishToQueue(ctx context.Context, queueName string, body []byte) error {
+	return r.channel.PublishWithContext(
+		ctx,
+		"",
+		queueName,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType: "application/json",
+			Body:        body,
+			Timestamp:   time.Now(),
+		},
+	)
+}
+
+func (r *RabbitMQClient) GetQueueSize(ctx context.Context, queueName string) (int, error) {
+	queue, err := r.channel.QueueDeclarePassive(
+		queueName,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to inspect queue %s: %w", queueName, err)
+	}
+
+	return queue.Messages, nil
 }

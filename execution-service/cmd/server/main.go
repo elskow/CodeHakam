@@ -18,6 +18,7 @@ import (
 	"execution_service/internal/middleware"
 	"execution_service/internal/plagiarism"
 	"execution_service/internal/queue"
+	"execution_service/internal/rbac"
 	"execution_service/internal/sandbox"
 	"execution_service/internal/services"
 	"execution_service/internal/storage"
@@ -81,10 +82,23 @@ func main() {
 	// Set plagiarism enqueuer for judge pool
 	judgePool.SetPlagiarismEnqueuer(plagiarismDetector.EnqueueSubmission)
 
-	handler := api.NewHandler(db, rabbitmqClient, judgePool)
+	// Initialize RBAC service
+	rbacService, err := rbac.NewRBACService(cfg.Database.URL, db)
+	if err != nil {
+		log.Fatalf("Failed to initialize RBAC service: %v", err)
+	}
+
+	// Initialize circuit breaker service
+	circuitBreakerService := services.NewCircuitBreakerService()
 
 	// Initialize security middleware
 	securityMiddleware := middleware.NewSecurityMiddleware(cfg.JWT.Secret)
+	securityMiddleware.SetRBACService(rbacService)
+
+	// Pass circuit breaker service to judge pool (can be used for future external service calls)
+	// For now, we'll initialize it and make it available for monitoring
+
+	handler := api.NewHandler(db, rabbitmqClient, judgePool, minioClient, cfg.JWT.Secret)
 
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()

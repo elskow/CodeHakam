@@ -11,22 +11,19 @@ import (
 	"time"
 
 	"execution_service/internal/config"
-	"execution_service/internal/services"
 )
 
 type SandboxService struct {
 	isolateSandbox    *IsolateSandbox
-	languageService   *services.LanguageService
 	securityValidator *SecurityValidator
 }
 
-func NewSandboxService(cfg *config.IsolateConfig, languageService *services.LanguageService) *SandboxService {
+func NewSandboxService(cfg *config.IsolateConfig) *SandboxService {
 	securityConfig := &SecurityConfig{}
 	validator := NewSecurityValidator(securityConfig)
 
 	return &SandboxService{
 		isolateSandbox:    NewIsolateSandbox(cfg),
-		languageService:   languageService,
 		securityValidator: validator,
 	}
 }
@@ -46,11 +43,8 @@ func (ss *SandboxService) Compile(ctx context.Context, language string, code []b
 		return nil, fmt.Errorf("failed to write code file: %w", err)
 	}
 
-	// Get language configuration from service
-	langConfig, err := ss.languageService.GetLanguageConfig(language)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get language config: %w", err)
-	}
+	// For now, use hardcoded language config - this should be replaced with database lookup
+	langConfig := getLanguageConfig(language)
 
 	// If no compilation required, return success
 	if langConfig.CompileCommand == nil {
@@ -138,11 +132,8 @@ func (ss *SandboxService) Execute(ctx context.Context, language string, input []
 		return nil, fmt.Errorf("failed to write input file: %w", err)
 	}
 
-	// Get language configuration from service
-	langConfig, err := ss.languageService.GetLanguageConfig(language)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get language config: %w", err)
-	}
+	// For now, use hardcoded language config - this should be replaced with database lookup
+	langConfig := getLanguageConfig(language)
 
 	runCmd := strings.ReplaceAll(langConfig.ExecuteCommand, "{executable}", "program")
 	runCmd = strings.ReplaceAll(runCmd, "{input}", "input.txt")

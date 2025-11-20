@@ -224,7 +224,7 @@ func loadFromEnv(cfg *Config) error {
 		cfg.JWT.Secret = jwtSecret
 	}
 	if cfg.JWT.Secret == "" {
-		cfg.JWT.Secret = "default-secret-change-in-production"
+		return fmt.Errorf("JWT_SECRET environment variable is required")
 	}
 
 	// Plagiarism detection config
