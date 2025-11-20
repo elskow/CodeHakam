@@ -14,8 +14,12 @@ import (
 	"execution_service/internal/cache"
 	"execution_service/internal/config"
 	"execution_service/internal/database"
+	"execution_service/internal/httpclient"
+	"execution_service/internal/middleware"
+	"execution_service/internal/plagiarism"
 	"execution_service/internal/queue"
 	"execution_service/internal/sandbox"
+	"execution_service/internal/services"
 	"execution_service/internal/storage"
 	"execution_service/internal/worker"
 
@@ -58,20 +62,40 @@ func main() {
 
 	isolateSandbox := sandbox.NewIsolateSandbox(&cfg.Isolate)
 
+	// Initialize resource validation service
+	contentClient := httpclient.NewContentServiceClient("http://localhost:3002")
+	resourceValidator := services.NewResourceValidationService(&cfg.Judge, contentClient)
+
 	judgePool := worker.NewJudgePool(
 		cfg.Judge.WorkerCount,
 		db,
 		rabbitmqClient,
 		minioClient,
 		isolateSandbox,
+		resourceValidator,
 	)
 
+	// Initialize plagiarism detector
+	plagiarismDetector := plagiarism.NewPlagiarismDetector(db, minioClient, &cfg.Plagiarism)
+
+	// Set plagiarism enqueuer for judge pool
+	judgePool.SetPlagiarismEnqueuer(plagiarismDetector.EnqueueSubmission)
+
 	handler := api.NewHandler(db, rabbitmqClient, judgePool)
+
+	// Initialize security middleware
+	securityMiddleware := middleware.NewSecurityMiddleware(cfg.JWT.Secret)
 
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
+
+	// Apply security middleware
+	router.Use(securityMiddleware.SecurityHeaders())
+	router.Use(securityMiddleware.JWTRateLimit(60))             // 60 requests per minute
+	router.Use(securityMiddleware.ValidateRequestSize(1 << 20)) // 1MB max request size
+	router.Use(securityMiddleware.ValidateContentType("application/json", "text/plain"))
 
 	handler.RegisterRoutes(router)
 
@@ -101,6 +125,14 @@ func main() {
 		}
 	}()
 
+	// Start plagiarism detector
+	go func() {
+		log.Printf("Starting plagiarism detection")
+		if err := plagiarismDetector.Start(ctx); err != nil {
+			errChan <- fmt.Errorf("failed to start plagiarism detector: %w", err)
+		}
+	}()
+
 	rabbitmqClient.StartHeartbeat()
 
 	quit := make(chan os.Signal, 1)
@@ -123,6 +155,7 @@ func main() {
 	}
 
 	judgePool.Stop()
+	plagiarismDetector.Stop()
 
 	log.Println("Execution service stopped")
 }

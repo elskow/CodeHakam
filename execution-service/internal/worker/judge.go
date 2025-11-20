@@ -5,47 +5,85 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
+	"execution_service/internal/checker"
 	"execution_service/internal/database"
 	"execution_service/internal/httpclient"
 	"execution_service/internal/models"
 	"execution_service/internal/queue"
 	"execution_service/internal/sandbox"
+	"execution_service/internal/services"
 	"execution_service/internal/storage"
+	"execution_service/internal/validation"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type JudgeWorker struct {
-	id           int
-	db           *database.DB
-	queue        *queue.RabbitMQClient
-	storage      *storage.MinIOClient
-	sandbox      *sandbox.IsolateSandbox
-	currentJob   *models.JudgeRequest
-	isProcessing bool
-	workerID     int64
+	id                  int
+	db                  *database.DB
+	queue               *queue.RabbitMQClient
+	storage             *storage.MinIOClient
+	sandbox             *sandbox.IsolateSandbox
+	validator           *validation.CodeValidator
+	customChecker       *checker.CustomChecker
+	resourceValidator   *services.ResourceValidationService
+	plagiarismEnqueuer  func(submissionID, userID, problemID int64, language, codeURL string)
+	currentJob          *models.JudgeRequest
+	isProcessing        bool
+	workerID            int64
+	lastHeartbeat       time.Time
+	failureCount        int
+	maxFailures         int
+	healthCheckInterval time.Duration
+	recoveryInterval    time.Duration
+	isHealthy           bool
+	mutex               sync.RWMutex
 }
 
 type JudgePool struct {
-	workers     []*JudgeWorker
-	db          *database.DB
-	queue       *queue.RabbitMQClient
-	storage     *storage.MinIOClient
-	sandbox     *sandbox.IsolateSandbox
-	workerCount int
+	workers             []*JudgeWorker
+	db                  *database.DB
+	queue               *queue.RabbitMQClient
+	storage             *storage.MinIOClient
+	sandbox             *sandbox.IsolateSandbox
+	customChecker       *checker.CustomChecker
+	workerCount         int
+	heartbeatInterval   time.Duration
+	healthCheckInterval time.Duration
+	maxWorkerFailures   int
+	shutdownTimeout     time.Duration
+	isRunning           bool
+	mutex               sync.RWMutex
 }
 
-func NewJudgePool(workerCount int, db *database.DB, q *queue.RabbitMQClient, s *storage.MinIOClient, sb *sandbox.IsolateSandbox) *JudgePool {
+func NewJudgePool(workerCount int, db *database.DB, q *queue.RabbitMQClient, s *storage.MinIOClient, sb *sandbox.IsolateSandbox, resourceValidator *services.ResourceValidationService) *JudgePool {
+	// Initialize advanced code validator
+	validatorConfig := validation.NewCodeValidator(&validation.ValidationConfig{}).GetDefaultConfig()
+	validator := validation.NewCodeValidator(validatorConfig)
+
+	// Initialize custom checker
+	checkerConfig := checker.NewCustomChecker(nil, nil, nil).GetDefaultConfig()
+	customChecker := checker.NewCustomChecker(sb, s, checkerConfig)
+
 	workers := make([]*JudgeWorker, workerCount)
 	for i := 0; i < workerCount; i++ {
 		worker := &JudgeWorker{
-			id:      i + 1,
-			db:      db,
-			queue:   q,
-			storage: s,
-			sandbox: sb,
+			id:                  i + 1,
+			db:                  db,
+			queue:               q,
+			storage:             s,
+			sandbox:             sb,
+			validator:           validator,
+			customChecker:       customChecker,
+			resourceValidator:   resourceValidator,
+			maxFailures:         3,
+			healthCheckInterval: 30 * time.Second,
+			recoveryInterval:    60 * time.Second,
+			isHealthy:           true,
+			lastHeartbeat:       time.Now(),
 		}
 
 		workerModel := &models.JudgeWorker{
@@ -64,18 +102,38 @@ func NewJudgePool(workerCount int, db *database.DB, q *queue.RabbitMQClient, s *
 	}
 
 	return &JudgePool{
-		workers:     workers,
-		db:          db,
-		queue:       q,
-		storage:     s,
-		sandbox:     sb,
-		workerCount: workerCount,
+		workers:             workers,
+		db:                  db,
+		queue:               q,
+		storage:             s,
+		sandbox:             sb,
+		customChecker:       customChecker,
+		workerCount:         workerCount,
+		heartbeatInterval:   15 * time.Second,
+		healthCheckInterval: 30 * time.Second,
+		maxWorkerFailures:   3,
+		shutdownTimeout:     30 * time.Second,
 	}
 }
 
 func (jp *JudgePool) Start(ctx context.Context) error {
+	jp.mutex.Lock()
+	if jp.isRunning {
+		jp.mutex.Unlock()
+		return fmt.Errorf("judge pool is already running")
+	}
+	jp.isRunning = true
+	jp.mutex.Unlock()
+
 	log.Printf("Starting judge pool with %d workers", jp.workerCount)
 
+	// Start worker health monitoring
+	go jp.healthMonitor(ctx)
+
+	// Start heartbeat reporter
+	go jp.heartbeatReporter(ctx)
+
+	// Start all workers
 	for _, worker := range jp.workers {
 		go worker.start(ctx)
 	}
@@ -86,9 +144,15 @@ func (jp *JudgePool) Start(ctx context.Context) error {
 func (jw *JudgeWorker) start(ctx context.Context) {
 	log.Printf("Judge worker %d started", jw.id)
 
+	// Start heartbeat goroutine
+	heartbeatCtx, cancelHeartbeat := context.WithCancel(ctx)
+	defer cancelHeartbeat()
+	go jw.heartbeatLoop(heartbeatCtx)
+
 	msgs, err := jw.queue.ConsumeSubmissions(ctx)
 	if err != nil {
 		log.Printf("Worker %d failed to start consuming: %v", jw.id, err)
+		jw.markUnhealthy()
 		return
 	}
 
@@ -98,8 +162,13 @@ func (jw *JudgeWorker) start(ctx context.Context) {
 			log.Printf("Worker %d shutting down", jw.id)
 			return
 		case msg := <-msgs:
-			if jw.isProcessing {
-				log.Printf("Worker %d is busy, rejecting message", jw.id)
+			jw.mutex.RLock()
+			isProcessing := jw.isProcessing
+			isHealthy := jw.isHealthy
+			jw.mutex.RUnlock()
+
+			if isProcessing || !isHealthy {
+				log.Printf("Worker %d is busy or unhealthy, rejecting message", jw.id)
 				jw.queue.RejectMessage(msg, true)
 				continue
 			}
@@ -110,18 +179,28 @@ func (jw *JudgeWorker) start(ctx context.Context) {
 }
 
 func (jw *JudgeWorker) processMessage(ctx context.Context, msg amqp.Delivery) {
+	jw.mutex.Lock()
 	jw.isProcessing = true
+	jw.mutex.Unlock()
+
 	defer func() {
+		jw.mutex.Lock()
 		jw.isProcessing = false
 		jw.currentJob = nil
+		jw.mutex.Unlock()
+
 		if jw.workerID > 0 {
 			jw.db.UpdateWorkerStatus(ctx, int(jw.workerID), "idle", nil)
 		}
+
+		// Update heartbeat after processing
+		jw.updateHeartbeat()
 	}()
 
 	request, err := queue.ParseJudgeRequest(msg)
 	if err != nil {
 		log.Printf("Worker %d failed to parse message: %v", jw.id, err)
+		jw.markUnhealthy()
 		jw.queue.RejectMessage(msg, false)
 		return
 	}
@@ -150,9 +229,43 @@ func (jw *JudgeWorker) processSubmission(ctx context.Context, request *models.Ju
 		return fmt.Errorf("failed to download code: %w", err)
 	}
 
+	jw.logInfo(request.SubmissionID, "Starting advanced code validation")
+
+	// Advanced code validation
+	validationResult := jw.validator.ValidateCode(code, "code."+request.Language)
+	if !validationResult.IsValid {
+		errorMsg := "Code validation failed: "
+		for _, violation := range validationResult.Violations {
+			if violation.Severity == "critical" {
+				errorMsg += fmt.Sprintf("[%s] %s", violation.Type, violation.Description)
+				break
+			}
+		}
+
+		err := jw.db.UpdateSubmissionCompilationError(ctx, request.SubmissionID, errorMsg)
+		if err != nil {
+			return fmt.Errorf("failed to update compilation error: %w", err)
+		}
+		return fmt.Errorf("code validation failed: %s", errorMsg)
+	}
+
+	// Log non-critical violations
+	for _, violation := range validationResult.Violations {
+		if violation.Severity != "critical" {
+			jw.logInfo(request.SubmissionID, fmt.Sprintf("Security warning: [%s] %s at line %d",
+				violation.Type, violation.Description, violation.Line))
+		}
+	}
+
 	jw.logInfo(request.SubmissionID, "Starting compilation")
 
-	compileResult, err := jw.sandbox.Compile(ctx, request.Language, code, time.Duration(request.TimeLimitMs)*time.Millisecond)
+	// Use separate compilation time limit (30 seconds max)
+	compileTimeLimit := time.Duration(30) * time.Second
+	if time.Duration(request.TimeLimitMs)*time.Millisecond < compileTimeLimit {
+		compileTimeLimit = time.Duration(request.TimeLimitMs) * time.Millisecond
+	}
+
+	compileResult, err := jw.sandbox.Compile(ctx, request.Language, code, compileTimeLimit)
 	if err != nil {
 		return fmt.Errorf("compilation error: %w", err)
 	}
@@ -180,6 +293,13 @@ func (jw *JudgeWorker) processSubmission(ctx context.Context, request *models.Ju
 		return fmt.Errorf("failed to get test cases: %w", err)
 	}
 
+	// Validate and normalize resource limits
+	limits, validationRes := jw.resourceValidator.ValidateAndNormalizeLimits(ctx, request.ProblemID, request.TimeLimitMs, request.MemoryLimitKb)
+	if !validationRes.IsValid {
+		jw.logError(request.SubmissionID, fmt.Sprintf("Resource validation failed: %v", validationRes.Violations))
+		// Continue with normalized limits but log the violation
+	}
+
 	results := make([]models.SubmissionTestResult, 0, len(testCases))
 	finalVerdict := models.VerdictAccepted
 	maxTime := 0
@@ -199,8 +319,25 @@ func (jw *JudgeWorker) processSubmission(ctx context.Context, request *models.Ju
 			return fmt.Errorf("failed to download test output: %w", err)
 		}
 
-		execResult, err := jw.sandbox.Execute(ctx, request.Language, input,
-			time.Duration(testCase.TimeLimit)*time.Millisecond, testCase.MemoryLimit)
+		// Validate and normalize resource limits
+		limits, validationResult := jw.resourceValidator.ValidateAndNormalizeLimits(ctx, request.ProblemID, request.TimeLimitMs, request.MemoryLimitKb)
+		if !validationResult.IsValid {
+			jw.logError(request.SubmissionID, fmt.Sprintf("Resource validation failed: %v", validationResult.Violations))
+			// Continue with normalized limits but log the violation
+		}
+
+		// Use per-test-case limits if available, otherwise fall back to problem limits
+		timeLimit := time.Duration(testCase.TimeLimit) * time.Millisecond
+		memoryLimit := testCase.MemoryLimit
+
+		if timeLimit <= 0 {
+			timeLimit = time.Duration(limits.TimeLimitMs) * time.Millisecond
+		}
+		if memoryLimit <= 0 {
+			memoryLimit = limits.MemoryLimitKb
+		}
+
+		execResult, err := jw.sandbox.Execute(ctx, request.Language, input, timeLimit, memoryLimit)
 		if err != nil {
 			return fmt.Errorf("execution error: %w", err)
 		}
@@ -214,9 +351,9 @@ func (jw *JudgeWorker) processSubmission(ctx context.Context, request *models.Ju
 
 		testVerdict := execResult.Verdict
 		if testVerdict == models.VerdictAccepted {
-			output := strings.TrimSpace(execResult.Output)
-			expected := strings.TrimSpace(string(expectedOutput))
-			if output != expected {
+			// Check output using appropriate checker
+			isCorrect, _ := jw.checkOutput(testCase.InputURL, string(expectedOutput), execResult.Output, testCase.CheckerURL)
+			if !isCorrect {
 				testVerdict = models.VerdictWrongAns
 			} else {
 				passedCount++
@@ -227,15 +364,26 @@ func (jw *JudgeWorker) processSubmission(ctx context.Context, request *models.Ju
 			finalVerdict = testVerdict
 		}
 
-		results = append(results, models.SubmissionTestResult{
+		result := models.SubmissionTestResult{
 			SubmissionID:    request.SubmissionID,
 			TestCaseID:      testCase.ID,
 			TestNumber:      i + 1,
 			Verdict:         testVerdict,
 			ExecutionTimeMs: &execResult.ExecutionTime,
 			MemoryUsedKb:    &execResult.MemoryUsed,
-			CheckerOutput:   &execResult.Error,
-		})
+		}
+
+		// Store checker output if available
+		if testVerdict == models.VerdictAccepted {
+			_, checkerOutput := jw.checkOutput(testCase.InputURL, string(expectedOutput), execResult.Output, testCase.CheckerURL)
+			if checkerOutput != "" {
+				result.CheckerOutput = &checkerOutput
+			}
+		} else {
+			result.CheckerOutput = &execResult.Error
+		}
+
+		results = append(results, result)
 
 		if finalVerdict != models.VerdictAccepted && finalVerdict != models.VerdictWrongAns {
 			break
@@ -263,9 +411,17 @@ func (jw *JudgeWorker) processSubmission(ctx context.Context, request *models.Ju
 
 	jw.logInfo(request.SubmissionID, fmt.Sprintf("Judging completed: %s (%d/%d)", finalVerdict, passedCount, len(testCases)))
 
+	// Log resource usage
+	jw.resourceValidator.LogResourceUsage(request.SubmissionID, limits, maxTime, maxMemory)
+
 	err = jw.queue.PublishEvent(ctx, "SubmissionJudged", judgeResult)
 	if err != nil {
 		return fmt.Errorf("failed to publish judged event: %w", err)
+	}
+
+	// Enqueue for plagiarism check if submission was accepted
+	if finalVerdict == models.VerdictAccepted && jw.plagiarismEnqueuer != nil {
+		jw.plagiarismEnqueuer(request.SubmissionID, request.UserID, request.ProblemID, request.Language, request.CodeURL)
 	}
 
 	return nil
@@ -316,6 +472,35 @@ func (jw *JudgeWorker) logInfo(submissionID int64, message string) {
 	})
 }
 
+func (jw *JudgeWorker) checkOutput(inputURL, expectedOutput, actualOutput, checkerURL string) (bool, string) {
+	// If no custom checker, use exact string matching
+	if checkerURL == "" {
+		expected := strings.TrimSpace(expectedOutput)
+		actual := strings.TrimSpace(actualOutput)
+		return expected == actual, ""
+	}
+
+	// Use custom checker for validation
+	ctx := context.Background()
+
+	// Create a test case model for the checker
+	testCase := &models.TestCase{
+		CheckerURL: checkerURL,
+	}
+
+	// Validate output using custom checker
+	checkerResult, err := jw.customChecker.ValidateOutput(ctx, testCase, actualOutput, expectedOutput)
+	if err != nil {
+		jw.logError(0, fmt.Sprintf("Custom checker execution failed: %v", err))
+		// Fall back to exact matching if checker fails
+		expected := strings.TrimSpace(expectedOutput)
+		actual := strings.TrimSpace(actualOutput)
+		return expected == actual, "Custom checker failed, used exact matching"
+	}
+
+	return checkerResult.IsCorrect, checkerResult.Message
+}
+
 func (jw *JudgeWorker) logError(submissionID int64, message string) {
 	log.Printf("[Submission %d] ERROR: %s", submissionID, message)
 	ctx := context.Background()
@@ -344,6 +529,350 @@ func (jp *JudgePool) GetStatus() map[string]any {
 	}
 }
 
+func (jp *JudgePool) GetSandbox() *sandbox.IsolateSandbox {
+	return jp.sandbox
+}
+
+func (jp *JudgePool) ScaleWorkers(newWorkerCount int) error {
+	jp.mutex.Lock()
+	defer jp.mutex.Unlock()
+
+	if !jp.isRunning {
+		return fmt.Errorf("judge pool is not running")
+	}
+
+	if newWorkerCount < 1 || newWorkerCount > 50 {
+		return fmt.Errorf("worker count must be between 1 and 50")
+	}
+
+	currentCount := len(jp.workers)
+
+	if newWorkerCount == currentCount {
+		return nil
+	}
+
+	if newWorkerCount > currentCount {
+		// Scale up - add new workers
+		for i := currentCount; i < newWorkerCount; i++ {
+			worker := &JudgeWorker{
+				id:                  i + 1,
+				db:                  jp.db,
+				queue:               jp.queue,
+				storage:             jp.storage,
+				sandbox:             jp.sandbox,
+				maxFailures:         3,
+				healthCheckInterval: 30 * time.Second,
+				recoveryInterval:    60 * time.Second,
+				isHealthy:           true,
+				lastHeartbeat:       time.Now(),
+			}
+
+			workerModel := &models.JudgeWorker{
+				WorkerName: fmt.Sprintf("judge-worker-%d", i+1),
+				Status:     "idle",
+			}
+
+			if err := jp.db.CreateJudgeWorker(context.Background(), workerModel); err != nil {
+				log.Printf("Failed to create worker record: %v", err)
+				worker.workerID = int64(i + 1)
+			} else {
+				worker.workerID = int64(workerModel.ID)
+			}
+
+			jp.workers = append(jp.workers, worker)
+
+			// Start the new worker
+			go worker.start(context.Background())
+		}
+		log.Printf("Scaled up workers from %d to %d", currentCount, newWorkerCount)
+	} else {
+		// Scale down - gracefully stop excess workers
+		excessWorkers := jp.workers[newWorkerCount:]
+		for _, worker := range excessWorkers {
+			// Wait for current job to finish
+			worker.mutex.RLock()
+			isProcessing := worker.isProcessing
+			worker.mutex.RUnlock()
+
+			if isProcessing {
+				// Mark for shutdown after current job
+				worker.mutex.Lock()
+				worker.isHealthy = false
+				worker.mutex.Unlock()
+			}
+		}
+
+		// Remove excess workers from slice
+		jp.workers = jp.workers[:newWorkerCount]
+		log.Printf("Scaled down workers from %d to %d", currentCount, newWorkerCount)
+	}
+
+	jp.workerCount = newWorkerCount
+	return nil
+}
+
 func (jp *JudgePool) Stop() {
-	log.Printf("Stopping judge pool")
+	jp.mutex.Lock()
+	if !jp.isRunning {
+		jp.mutex.Unlock()
+		return
+	}
+	jp.isRunning = false
+	jp.mutex.Unlock()
+
+	log.Printf("Stopping judge pool gracefully")
+
+	// Create shutdown context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), jp.shutdownTimeout)
+	defer cancel()
+
+	// Wait for all workers to finish current jobs
+	done := make(chan bool)
+	go func() {
+		for _, worker := range jp.workers {
+			worker.mutex.RLock()
+			isProcessing := worker.isProcessing
+			worker.mutex.RUnlock()
+
+			if isProcessing {
+				log.Printf("Waiting for worker %d to finish current job", worker.id)
+			}
+		}
+
+		// Check every second if all workers are done
+		for {
+			allDone := true
+			for _, worker := range jp.workers {
+				worker.mutex.RLock()
+				if worker.isProcessing {
+					allDone = false
+					worker.mutex.RUnlock()
+					break
+				}
+				worker.mutex.RUnlock()
+			}
+
+			if allDone {
+				break
+			}
+			time.Sleep(1 * time.Second)
+		}
+
+		done <- true
+	}()
+
+	select {
+	case <-done:
+		log.Printf("All workers finished gracefully")
+	case <-ctx.Done():
+		log.Printf("Shutdown timeout reached, forcing stop")
+	}
+
+	log.Printf("Judge pool stopped")
+}
+
+func (jp *JudgePool) SetPlagiarismEnqueuer(enqueuer func(submissionID, userID, problemID int64, language, codeURL string)) {
+	for _, worker := range jp.workers {
+		worker.plagiarismEnqueuer = enqueuer
+	}
+}
+
+func (jp *JudgePool) healthMonitor(ctx context.Context) {
+	ticker := time.NewTicker(jp.healthCheckInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			jp.checkWorkerHealth(ctx)
+		}
+	}
+}
+
+func (jp *JudgePool) heartbeatReporter(ctx context.Context) {
+	ticker := time.NewTicker(jp.heartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			jp.reportPoolHealth(ctx)
+		}
+	}
+}
+
+func (jp *JudgePool) checkWorkerHealth(ctx context.Context) {
+	jp.mutex.RLock()
+	workers := make([]*JudgeWorker, len(jp.workers))
+	copy(workers, jp.workers)
+	jp.mutex.RUnlock()
+
+	for _, worker := range workers {
+		worker.mutex.RLock()
+		isHealthy := worker.isHealthy
+		lastHeartbeat := worker.lastHeartbeat
+		worker.mutex.RUnlock()
+
+		// Check if worker heartbeat is stale
+		if time.Since(lastHeartbeat) > jp.healthCheckInterval*2 {
+			log.Printf("Worker %d heartbeat timeout, last seen %v ago", worker.id, time.Since(lastHeartbeat))
+
+			worker.mutex.Lock()
+			worker.failureCount++
+			worker.isHealthy = false
+			worker.mutex.Unlock()
+
+			// Try to recover worker if failure count is below threshold
+			if worker.failureCount < jp.maxWorkerFailures {
+				log.Printf("Attempting to recover worker %d (attempt %d/%d)", worker.id, worker.failureCount, jp.maxWorkerFailures)
+				go jp.recoverWorker(ctx, worker)
+			} else {
+				log.Printf("Worker %d exceeded max failures, marking as failed", worker.id)
+				jp.handleFailedWorker(ctx, worker)
+			}
+		} else if !isHealthy && time.Since(lastHeartbeat) < jp.healthCheckInterval {
+			// Worker recovered
+			worker.mutex.Lock()
+			worker.isHealthy = true
+			worker.failureCount = 0
+			worker.mutex.Unlock()
+			log.Printf("Worker %d recovered and is healthy", worker.id)
+		}
+	}
+}
+
+func (jp *JudgePool) recoverWorker(ctx context.Context, worker *JudgeWorker) {
+	// Wait recovery interval
+	time.Sleep(worker.recoveryInterval)
+
+	// Check if context is still valid
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
+	// Reset worker state
+	worker.mutex.Lock()
+	worker.isHealthy = true
+	worker.lastHeartbeat = time.Now()
+	worker.failureCount = 0
+	worker.isProcessing = false
+	worker.currentJob = nil
+	worker.mutex.Unlock()
+
+	// Update worker status in database
+	if worker.workerID > 0 {
+		err := jp.db.UpdateWorkerStatus(ctx, int(worker.workerID), "idle", nil)
+		if err != nil {
+			log.Printf("Failed to update recovered worker %d status: %v", worker.id, err)
+		}
+	}
+
+	log.Printf("Worker %d recovery completed", worker.id)
+}
+
+func (jp *JudgePool) handleFailedWorker(ctx context.Context, worker *JudgeWorker) {
+	// Update worker status in database
+	if worker.workerID > 0 {
+		err := jp.db.UpdateWorkerStatus(ctx, int(worker.workerID), "failed", nil)
+		if err != nil {
+			log.Printf("Failed to update failed worker %d status: %v", worker.id, err)
+		}
+	}
+
+	// In a production system, you might want to:
+	// - Send alerts
+	// - Try to restart the worker process
+	// - Remove from rotation and create a new worker
+	log.Printf("Worker %d handling complete - marked as failed", worker.id)
+}
+
+func (jp *JudgePool) reportPoolHealth(ctx context.Context) {
+	jp.mutex.RLock()
+	workers := make([]*JudgeWorker, len(jp.workers))
+	copy(workers, jp.workers)
+	jp.mutex.RUnlock()
+
+	healthyWorkers := 0
+	unhealthyWorkers := 0
+	activeWorkers := 0
+
+	for _, worker := range workers {
+		worker.mutex.RLock()
+		if worker.isHealthy {
+			healthyWorkers++
+		} else {
+			unhealthyWorkers++
+		}
+		if worker.isProcessing {
+			activeWorkers++
+		}
+		worker.mutex.RUnlock()
+	}
+
+	// Get queue info
+	queueSize, _ := jp.queue.GetQueueInfo()
+
+	// Log pool health
+	log.Printf("Pool Health - Total: %d, Healthy: %d, Unhealthy: %d, Active: %d, Queue: %d",
+		len(workers), healthyWorkers, unhealthyWorkers, activeWorkers, queueSize)
+
+	// Store health metrics in database
+	healthData := map[string]interface{}{
+		"total_workers":     len(workers),
+		"healthy_workers":   healthyWorkers,
+		"unhealthy_workers": unhealthyWorkers,
+		"active_workers":    activeWorkers,
+		"queue_size":        queueSize,
+		"timestamp":         time.Now(),
+	}
+
+	// Create health log entry
+	logEntry := &models.ExecutionLog{
+		Level:   "INFO",
+		Message: fmt.Sprintf("Pool health report: %+v", healthData),
+	}
+
+	if err := jp.db.CreateExecutionLog(ctx, logEntry); err != nil {
+		log.Printf("Failed to store health report: %v", err)
+	}
+}
+
+func (jw *JudgeWorker) heartbeatLoop(ctx context.Context) {
+	ticker := time.NewTicker(jw.healthCheckInterval / 3) // Send heartbeat every 10 seconds
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			jw.updateHeartbeat()
+		}
+	}
+}
+
+func (jw *JudgeWorker) updateHeartbeat() {
+	jw.mutex.Lock()
+	jw.lastHeartbeat = time.Now()
+	jw.mutex.Unlock()
+}
+
+func (jw *JudgeWorker) markUnhealthy() {
+	jw.mutex.Lock()
+	jw.isHealthy = false
+	jw.failureCount++
+	jw.mutex.Unlock()
+}
+
+func (jw *JudgeWorker) markHealthy() {
+	jw.mutex.Lock()
+	jw.isHealthy = true
+	jw.failureCount = 0
+	jw.mutex.Unlock()
 }

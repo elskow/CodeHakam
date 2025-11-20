@@ -104,6 +104,7 @@ type TestCase struct {
 	IsSample    bool   `json:"is_sample"`
 	TimeLimit   int    `json:"time_limit"`
 	MemoryLimit int    `json:"memory_limit"`
+	CheckerURL  string `json:"checker_url,omitempty"`
 }
 
 func (v Verdict) Value() (driver.Value, error) {
@@ -126,4 +127,16 @@ type EventMessage struct {
 	EventType string                 `json:"event_type"`
 	Data      map[string]interface{} `json:"data"`
 	Timestamp time.Time              `json:"timestamp"`
+}
+
+type PlagiarismReport struct {
+	ID              int64     `json:"id" db:"id"`
+	Submission1ID   int64     `json:"submission1_id" db:"submission1_id"`
+	Submission2ID   int64     `json:"submission2_id" db:"submission2_id"`
+	SimilarityScore float64   `json:"similarity_score" db:"similarity_score"`
+	Algorithm       string    `json:"algorithm" db:"algorithm"`
+	IsReviewed      bool      `json:"is_reviewed" db:"is_reviewed"`
+	ReviewerID      *int64    `json:"reviewer_id,omitempty" db:"reviewer_id"`
+	Status          string    `json:"status" db:"status"`
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
 }

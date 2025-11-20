@@ -1,7 +1,6 @@
 package sandbox
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -16,7 +15,8 @@ import (
 )
 
 type IsolateSandbox struct {
-	config *config.IsolateConfig
+	config            *config.IsolateConfig
+	securityValidator *SecurityValidator
 }
 
 type ExecutionResult struct {
@@ -26,6 +26,8 @@ type ExecutionResult struct {
 	ExecutionTime int
 	MemoryUsed    int
 	ExitCode      int
+	WallTime      int
+	Signals       string
 }
 
 type CompileResult struct {
@@ -35,19 +37,23 @@ type CompileResult struct {
 }
 
 func NewIsolateSandbox(cfg *config.IsolateConfig) *IsolateSandbox {
+	securityConfig := &SecurityConfig{}
+	validator := NewSecurityValidator(securityConfig)
+
 	return &IsolateSandbox{
-		config: cfg,
+		config:            cfg,
+		securityValidator: validator,
 	}
 }
 
 func (i *IsolateSandbox) Compile(ctx context.Context, language string, code []byte, timeLimit time.Duration) (*CompileResult, error) {
-	boxID, err := i.createBox()
+	boxID, err := i.CreateBox()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create isolate box: %w", err)
 	}
-	defer i.cleanupBox(boxID)
+	defer i.CleanupBox(boxID)
 
-	boxDir := i.getBoxDir(boxID)
+	boxDir := i.GetBoxDir(boxID)
 	codeFile := filepath.Join(boxDir, "code"+getFileExtension(language))
 
 	err = os.WriteFile(codeFile, code, 0644)
@@ -56,27 +62,49 @@ func (i *IsolateSandbox) Compile(ctx context.Context, language string, code []by
 	}
 
 	langConfig := getLanguageConfig(language)
+
+	// If no compilation required, return success
 	if langConfig.CompileCommand == nil {
-		return &CompileResult{Success: true}, nil
+		return &CompileResult{
+			Success: true,
+			Output:  "No compilation required",
+			Error:   "",
+		}, nil
 	}
 
-	compileCmd := strings.ReplaceAll(*langConfig.CompileCommand, "{input}", "code"+getFileExtension(language))
-	compileCmd = strings.ReplaceAll(compileCmd, "{output}", "program")
+	compileCmd := strings.ReplaceAll(*langConfig.CompileCommand, "{executable}", "program")
+	compileCmd = strings.ReplaceAll(compileCmd, "{input}", "code"+getFileExtension(language))
+	compileCmd = strings.ReplaceAll(compileCmd, "{classname}", "Main")
+
+	// Convert time limit to seconds for isolate, ensure minimum 1 second
+	timeSec := int(timeLimit.Seconds())
+	if timeSec < 1 {
+		timeSec = 1
+	}
+	wallTimeSec := timeSec * 2
+	memoryLimit := 524288 // 512MB default for compilation
 
 	args := []string{
 		"--box-id=" + strconv.Itoa(boxID),
 		"--cg",
 		"--cg-timing",
-		"--processes=10",
-		"--mem=262144",
-		"--time=" + strconv.Itoa(int(timeLimit.Seconds())),
-		"--wall-time=" + strconv.Itoa(int(timeLimit.Seconds()*2)),
+		"--processes=1",
+		"--mem=" + strconv.Itoa(memoryLimit),
+		"--time=" + strconv.Itoa(timeSec),
+		"--wall-time=" + strconv.Itoa(wallTimeSec),
+		"--extra-time=0.5",
+		"--stack=65536",
 		"--fsize=16384",
+		"--chdir=/box",
+		"--env=HOME=/tmp",
 		"--env=PATH=/usr/bin:/bin",
 		"--dir=/etc:noexec",
 		"--dir=/usr:noexec",
 		"--dir=/lib:noexec",
 		"--dir=/lib64:noexec",
+		"--stdout=output.txt",
+		"--stderr=error.txt",
+		"--meta=meta.txt",
 		"--run",
 		"--",
 		"/bin/bash",
@@ -87,37 +115,33 @@ func (i *IsolateSandbox) Compile(ctx context.Context, language string, code []by
 	cmd := exec.CommandContext(ctx, i.config.Path, args...)
 	cmd.Dir = boxDir
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
 	err = cmd.Run()
 	if err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			return &CompileResult{
-				Success: false,
-				Output:  stdout.String(),
-				Error:   stderr.String(),
-			}, nil
-		}
-		return nil, fmt.Errorf("failed to run compile command: %w", err)
+		return i.parseCompilationResult(boxID, err, timeLimit, memoryLimit)
 	}
+
+	// Read compilation output
+	outputFile := filepath.Join(boxDir, "output.txt")
+	errorFile := filepath.Join(boxDir, "error.txt")
+
+	output, _ := os.ReadFile(outputFile)
+	errorMsg, _ := os.ReadFile(errorFile)
 
 	return &CompileResult{
 		Success: true,
-		Output:  stdout.String(),
-		Error:   stderr.String(),
+		Output:  string(output),
+		Error:   string(errorMsg),
 	}, nil
 }
 
 func (i *IsolateSandbox) Execute(ctx context.Context, language string, input []byte, timeLimit time.Duration, memoryLimit int) (*ExecutionResult, error) {
-	boxID, err := i.createBox()
+	boxID, err := i.CreateBox()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create isolate box: %w", err)
 	}
-	defer i.cleanupBox(boxID)
+	defer i.CleanupBox(boxID)
 
-	boxDir := i.getBoxDir(boxID)
+	boxDir := i.GetBoxDir(boxID)
 	inputFile := filepath.Join(boxDir, "input.txt")
 
 	err = os.WriteFile(inputFile, input, 0644)
@@ -127,8 +151,15 @@ func (i *IsolateSandbox) Execute(ctx context.Context, language string, input []b
 
 	langConfig := getLanguageConfig(language)
 	runCmd := strings.ReplaceAll(langConfig.ExecuteCommand, "{executable}", "program")
-	runCmd = strings.ReplaceAll(runCmd, "{input}", "code"+getFileExtension(language))
+	runCmd = strings.ReplaceAll(runCmd, "{input}", "input.txt")
 	runCmd = strings.ReplaceAll(runCmd, "{classname}", "Main")
+
+	// Convert time limit to seconds for isolate, ensure minimum 1 second
+	timeSec := int(timeLimit.Seconds())
+	if timeSec < 1 {
+		timeSec = 1
+	}
+	wallTimeSec := timeSec * 2
 
 	args := []string{
 		"--box-id=" + strconv.Itoa(boxID),
@@ -136,8 +167,8 @@ func (i *IsolateSandbox) Execute(ctx context.Context, language string, input []b
 		"--cg-timing",
 		"--processes=1",
 		"--mem=" + strconv.Itoa(memoryLimit),
-		"--time=" + strconv.Itoa(int(timeLimit.Seconds())),
-		"--wall-time=" + strconv.Itoa(int(timeLimit.Seconds()*2)),
+		"--time=" + strconv.Itoa(timeSec),
+		"--wall-time=" + strconv.Itoa(wallTimeSec),
 		"--extra-time=0.5",
 		"--stack=65536",
 		"--fsize=16384",
@@ -151,6 +182,7 @@ func (i *IsolateSandbox) Execute(ctx context.Context, language string, input []b
 		"--stdin=input.txt",
 		"--stdout=output.txt",
 		"--stderr=error.txt",
+		"--meta=meta.txt",
 		"--run",
 		"--",
 		"/bin/bash",
@@ -163,17 +195,14 @@ func (i *IsolateSandbox) Execute(ctx context.Context, language string, input []b
 
 	err = cmd.Run()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return i.parseExecutionResult(boxID, exitErr.ExitCode())
-		}
-		return nil, fmt.Errorf("failed to run execute command: %w", err)
+		return i.parseExecutionResult(boxID, 1, timeLimit, memoryLimit)
 	}
 
-	return i.parseExecutionResult(boxID, 0)
+	return i.parseExecutionResult(boxID, 0, timeLimit, memoryLimit)
 }
 
-func (i *IsolateSandbox) parseExecutionResult(boxID int, exitCode int) (*ExecutionResult, error) {
-	boxDir := i.getBoxDir(boxID)
+func (i *IsolateSandbox) parseExecutionResult(boxID int, exitCode int, timeLimit time.Duration, memoryLimit int) (*ExecutionResult, error) {
+	boxDir := i.GetBoxDir(boxID)
 
 	outputFile := filepath.Join(boxDir, "output.txt")
 	errorFile := filepath.Join(boxDir, "error.txt")
@@ -189,52 +218,147 @@ func (i *IsolateSandbox) parseExecutionResult(boxID int, exitCode int) (*Executi
 		ExitCode: exitCode,
 	}
 
-	result.ExecutionTime, result.MemoryUsed = i.parseMetaFile(string(meta))
+	result.ExecutionTime, result.MemoryUsed, result.WallTime, result.Signals = i.parseMetaFile(string(meta))
 
-	result.Verdict = i.determineVerdict(exitCode, result.ExecutionTime, result.MemoryUsed)
+	result.Verdict = i.determineVerdict(exitCode, result.ExecutionTime, result.MemoryUsed, result.WallTime, timeLimit, memoryLimit)
+
+	// Validate resource usage for security anomalies
+	resourceViolations := i.securityValidator.ValidateResourceUsage(
+		result.ExecutionTime, result.WallTime, result.MemoryUsed, timeLimit, memoryLimit)
+
+	// Log security violations but don't fail execution for non-critical issues
+	for _, violation := range resourceViolations {
+		if violation.Severity == "critical" {
+			result.Verdict = models.VerdictRuntime
+			result.Error = fmt.Sprintf("Security violation: %s", violation.Description)
+			break
+		}
+	}
 
 	return result, nil
 }
 
-func (i *IsolateSandbox) parseMetaFile(meta string) (timeMs, memoryKb int) {
+func (i *IsolateSandbox) parseCompilationResult(boxID int, err error, timeLimit time.Duration, memoryLimit int) (*CompileResult, error) {
+	boxDir := i.GetBoxDir(boxID)
+
+	outputFile := filepath.Join(boxDir, "output.txt")
+	errorFile := filepath.Join(boxDir, "error.txt")
+
+	output, _ := os.ReadFile(outputFile)
+	errorStr, _ := os.ReadFile(errorFile)
+
+	// Check if it was a timeout
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		if exitErr.ExitCode() == 124 {
+			return &CompileResult{
+				Success: false,
+				Output:  string(output),
+				Error:   "Compilation timeout (limit: " + strconv.Itoa(int(timeLimit.Seconds())) + "s)",
+			}, nil
+		}
+	}
+
+	return &CompileResult{
+		Success: false,
+		Output:  string(output),
+		Error:   string(errorStr),
+	}, nil
+}
+
+func (i *IsolateSandbox) parseMetaFile(meta string) (timeMs, memoryKb, wallTimeMs int, signals string) {
 	lines := strings.Split(meta, "\n")
 	for _, line := range lines {
+		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "time:") {
 			timeStr := strings.TrimSpace(strings.TrimPrefix(line, "time:"))
 			if time, err := strconv.ParseFloat(timeStr, 64); err == nil {
+				// Convert seconds to milliseconds
 				timeMs = int(time * 1000)
+			}
+		}
+		if strings.HasPrefix(line, "time-wall:") {
+			timeStr := strings.TrimSpace(strings.TrimPrefix(line, "time-wall:"))
+			if time, err := strconv.ParseFloat(timeStr, 64); err == nil {
+				// Convert seconds to milliseconds
+				wallTimeMs = int(time * 1000)
 			}
 		}
 		if strings.HasPrefix(line, "max-rss:") {
 			memStr := strings.TrimSpace(strings.TrimPrefix(line, "max-rss:"))
 			if mem, err := strconv.Atoi(memStr); err == nil {
-				memoryKb = mem / 1024
+				// max-rss is already in KB
+				memoryKb = mem
 			}
+		}
+		if strings.HasPrefix(line, "mem:") {
+			memStr := strings.TrimSpace(strings.TrimPrefix(line, "mem:"))
+			if mem, err := strconv.Atoi(memStr); err == nil {
+				// mem is in bytes, convert to KB
+				memKB := mem / 1024
+				if memKB > memoryKb {
+					memoryKb = memKB
+				}
+			}
+		}
+		if strings.HasPrefix(line, "signals:") {
+			signals = strings.TrimSpace(strings.TrimPrefix(line, "signals:"))
 		}
 	}
 	return
 }
 
-func (i *IsolateSandbox) determineVerdict(exitCode, timeMs, memoryKb int) models.Verdict {
-	if exitCode != 0 {
-		if timeMs > 0 && timeMs < 100 {
-			return models.VerdictRuntime
-		}
-		return models.VerdictRuntime
+func (i *IsolateSandbox) determineVerdict(exitCode, timeMs, memoryKb, wallTimeMs int, timeLimit time.Duration, memoryLimit int) models.Verdict {
+	timeLimitMs := int(timeLimit.Milliseconds())
+
+	// Use wall-time for time limit checking (more accurate for user programs)
+	effectiveTime := wallTimeMs
+	if wallTimeMs == 0 {
+		effectiveTime = timeMs
 	}
 
-	if timeMs > 5000 {
+	// Check time limit exceeded
+	if effectiveTime > timeLimitMs {
 		return models.VerdictTimeLim
 	}
 
-	if memoryKb > 262144 {
+	// Check memory limit exceeded
+	if memoryKb > memoryLimit {
 		return models.VerdictMemLim
+	}
+
+	// Check runtime errors
+	if exitCode != 0 {
+		// Check for specific exit codes from Isolate
+		switch exitCode {
+		case 124: // timeout (from timeout command)
+			return models.VerdictTimeLim
+		case 125: // timeout command failed
+			return models.VerdictRuntime
+		case 126: // command not executable
+			return models.VerdictRuntime
+		case 127: // command not found
+			return models.VerdictRuntime
+		case 130: // SIGINT (Ctrl+C)
+			return models.VerdictRuntime
+		case 134: // SIGABRT
+			return models.VerdictRuntime
+		case 137: // SIGKILL (memory limit)
+			return models.VerdictMemLim
+		case 139: // SIGSEGV
+			return models.VerdictRuntime
+		case 143: // SIGTERM
+			return models.VerdictRuntime
+		case 255: // Isolate sandbox violation
+			return models.VerdictRuntime
+		default:
+			return models.VerdictRuntime
+		}
 	}
 
 	return models.VerdictAccepted
 }
 
-func (i *IsolateSandbox) createBox() (int, error) {
+func (i *IsolateSandbox) CreateBox() (int, error) {
 	cmd := exec.Command(i.config.Path, "--init")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -250,12 +374,12 @@ func (i *IsolateSandbox) createBox() (int, error) {
 	return boxID, nil
 }
 
-func (i *IsolateSandbox) cleanupBox(boxID int) {
+func (i *IsolateSandbox) CleanupBox(boxID int) {
 	cmd := exec.Command(i.config.Path, "--box-id="+strconv.Itoa(boxID), "--cleanup")
 	cmd.Run()
 }
 
-func (i *IsolateSandbox) getBoxDir(boxID int) string {
+func (i *IsolateSandbox) GetBoxDir(boxID int) string {
 	return filepath.Join(i.config.BoxRoot, fmt.Sprintf("%d", boxID))
 }
 
@@ -315,4 +439,8 @@ func getFileExtension(language string) string {
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+func (i *IsolateSandbox) GetPath() string {
+	return i.config.Path
 }

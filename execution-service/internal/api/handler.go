@@ -1,10 +1,12 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"execution_service/internal/database"
+	"execution_service/internal/middleware"
 	"execution_service/internal/models"
 	"execution_service/internal/queue"
 	"execution_service/internal/validation"
@@ -14,17 +16,28 @@ import (
 )
 
 type Handler struct {
-	db    *database.DB
-	queue *queue.RabbitMQClient
-	pool  *worker.JudgePool
+	db       *database.DB
+	queue    *queue.RabbitMQClient
+	pool     *worker.JudgePool
+	security *middleware.SecurityMiddleware
 }
 
 func NewHandler(db *database.DB, q *queue.RabbitMQClient, p *worker.JudgePool) *Handler {
+	securityMiddleware := middleware.NewSecurityMiddleware("default-secret-change-in-production")
 	return &Handler{
-		db:    db,
-		queue: q,
-		pool:  p,
+		db:       db,
+		queue:    q,
+		pool:     p,
+		security: securityMiddleware,
 	}
+}
+
+func (h *Handler) RequireAuth() gin.HandlerFunc {
+	return h.security.RequireAuth()
+}
+
+func (h *Handler) RequireAdmin() gin.HandlerFunc {
+	return h.security.RequireAdmin()
 }
 
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
@@ -53,6 +66,8 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 		}
 
 		admin := api.Group("/admin")
+		admin.Use(h.RequireAuth())
+		admin.Use(h.RequireAdmin())
 		{
 			admin.POST("/clear-box/:id", h.ClearBox)
 		}
@@ -185,7 +200,7 @@ func (h *Handler) GetWorkers(c *gin.Context) {
 
 func (h *Handler) ScaleWorkers(c *gin.Context) {
 	var request struct {
-		WorkerCount int `json:"worker_count" binding:"required,min=1,max=20"`
+		WorkerCount int `json:"worker_count" binding:"required,min=1,max=50"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -193,9 +208,34 @@ func (h *Handler) ScaleWorkers(c *gin.Context) {
 		return
 	}
 
+	// Get current status
+	currentStatus := h.pool.GetStatus()
+	currentWorkers := currentStatus["total_workers"].(int)
+
+	if request.WorkerCount == currentWorkers {
+		c.JSON(http.StatusOK, gin.H{
+			"message":           "No scaling needed",
+			"current_workers":   currentWorkers,
+			"requested_workers": request.WorkerCount,
+		})
+		return
+	}
+
+	// Perform scaling operation
+	err := h.pool.ScaleWorkers(request.WorkerCount)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":             fmt.Sprintf("Failed to scale workers: %v", err),
+			"current_workers":   currentWorkers,
+			"requested_workers": request.WorkerCount,
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"message":      "Worker scaling requested",
-		"worker_count": request.WorkerCount,
+		"message":          "Worker scaling completed",
+		"previous_workers": currentWorkers,
+		"current_workers":  request.WorkerCount,
 	})
 }
 
@@ -241,13 +281,21 @@ func (h *Handler) GetLanguage(c *gin.Context) {
 func (h *Handler) ClearBox(c *gin.Context) {
 	idStr := c.Param("id")
 	boxID, err := strconv.Atoi(idStr)
-	if err != nil || boxID < 0 || boxID > 100 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid box ID"})
+	if err != nil || boxID < 0 || boxID > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid box ID (must be 0-1000)"})
 		return
 	}
 
+	isolateSandbox := h.pool.GetSandbox()
+	if isolateSandbox == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Sandbox not available"})
+		return
+	}
+
+	isolateSandbox.CleanupBox(boxID)
+
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Box clear requested",
+		"message": fmt.Sprintf("Box %d cleaned up successfully", boxID),
 		"box_id":  boxID,
 	})
 }

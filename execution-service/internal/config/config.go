@@ -10,13 +10,15 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	RabbitMQ RabbitMQConfig `yaml:"rabbitmq"`
-	MinIO    MinIOConfig    `yaml:"minio"`
-	Valkey   ValkeyConfig   `yaml:"valkey"`
-	Judge    JudgeConfig    `yaml:"judge"`
-	Isolate  IsolateConfig  `yaml:"isolate"`
+	Server     ServerConfig     `yaml:"server"`
+	Database   DatabaseConfig   `yaml:"database"`
+	RabbitMQ   RabbitMQConfig   `yaml:"rabbitmq"`
+	MinIO      MinIOConfig      `yaml:"minio"`
+	Valkey     ValkeyConfig     `yaml:"valkey"`
+	Judge      JudgeConfig      `yaml:"judge"`
+	Isolate    IsolateConfig    `yaml:"isolate"`
+	JWT        JWTConfig        `yaml:"jwt"`
+	Plagiarism PlagiarismConfig `yaml:"plagiarism"`
 }
 
 type ServerConfig struct {
@@ -67,6 +69,20 @@ type IsolateConfig struct {
 	Path     string `yaml:"path"`
 	BoxRoot  string `yaml:"box_root"`
 	MaxBoxes int    `yaml:"max_boxes"`
+}
+
+type JWTConfig struct {
+	Secret string `yaml:"secret"`
+}
+
+type PlagiarismConfig struct {
+	Enabled                bool          `yaml:"enabled"`
+	WorkerCount            int           `yaml:"worker_count"`
+	SimilarityThreshold    float64       `yaml:"similarity_threshold"`
+	MinCodeLength          int           `yaml:"min_code_length"`
+	CheckInterval          time.Duration `yaml:"check_interval"`
+	MaxSubmissionsPerCheck int           `yaml:"max_submissions_per_check"`
+	Algorithms             []string      `yaml:"algorithms"`
 }
 
 func Load() (*Config, error) {
@@ -202,6 +218,72 @@ func loadFromEnv(cfg *Config) error {
 	}
 	if cfg.Isolate.BoxRoot == "" {
 		cfg.Isolate.BoxRoot = "/var/local/lib/isolate"
+	}
+
+	if jwtSecret := os.Getenv("JWT_SECRET"); jwtSecret != "" {
+		cfg.JWT.Secret = jwtSecret
+	}
+	if cfg.JWT.Secret == "" {
+		cfg.JWT.Secret = "default-secret-change-in-production"
+	}
+
+	// Plagiarism detection config
+	if enabled := os.Getenv("PLAGIARISM_ENABLED"); enabled != "" {
+		if e, err := strconv.ParseBool(enabled); err == nil {
+			cfg.Plagiarism.Enabled = e
+		}
+	}
+	if cfg.Plagiarism.Enabled == false {
+		cfg.Plagiarism.Enabled = true // Default to enabled
+	}
+
+	if workerCount := os.Getenv("PLAGIARISM_WORKER_COUNT"); workerCount != "" {
+		if count, err := strconv.Atoi(workerCount); err == nil {
+			cfg.Plagiarism.WorkerCount = count
+		}
+	}
+	if cfg.Plagiarism.WorkerCount == 0 {
+		cfg.Plagiarism.WorkerCount = 2
+	}
+
+	if threshold := os.Getenv("PLAGIARISM_SIMILARITY_THRESHOLD"); threshold != "" {
+		if t, err := strconv.ParseFloat(threshold, 64); err == nil {
+			cfg.Plagiarism.SimilarityThreshold = t
+		}
+	}
+	if cfg.Plagiarism.SimilarityThreshold == 0 {
+		cfg.Plagiarism.SimilarityThreshold = 0.85
+	}
+
+	if minCodeLength := os.Getenv("PLAGIARISM_MIN_CODE_LENGTH"); minCodeLength != "" {
+		if length, err := strconv.Atoi(minCodeLength); err == nil {
+			cfg.Plagiarism.MinCodeLength = length
+		}
+	}
+	if cfg.Plagiarism.MinCodeLength == 0 {
+		cfg.Plagiarism.MinCodeLength = 100
+	}
+
+	if checkInterval := os.Getenv("PLAGIARISM_CHECK_INTERVAL"); checkInterval != "" {
+		if interval, err := time.ParseDuration(checkInterval); err == nil {
+			cfg.Plagiarism.CheckInterval = interval
+		}
+	}
+	if cfg.Plagiarism.CheckInterval == 0 {
+		cfg.Plagiarism.CheckInterval = 5 * time.Minute
+	}
+
+	if maxSubmissions := os.Getenv("PLAGIARISM_MAX_SUBMISSIONS_PER_CHECK"); maxSubmissions != "" {
+		if max, err := strconv.Atoi(maxSubmissions); err == nil {
+			cfg.Plagiarism.MaxSubmissionsPerCheck = max
+		}
+	}
+	if cfg.Plagiarism.MaxSubmissionsPerCheck == 0 {
+		cfg.Plagiarism.MaxSubmissionsPerCheck = 50
+	}
+
+	if cfg.Plagiarism.Algorithms == nil || len(cfg.Plagiarism.Algorithms) == 0 {
+		cfg.Plagiarism.Algorithms = []string{"tokens", "lines", "structure", "variables", "functions"}
 	}
 
 	return nil

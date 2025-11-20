@@ -282,3 +282,101 @@ func (db *DB) GetProblemSubmissions(ctx context.Context, problemID int64, limit,
 
 	return submissions, nil
 }
+
+// Plagiarism detection methods
+func (db *DB) GetUncheckedSubmissions(ctx context.Context, limit int) ([]models.Submission, error) {
+	query := `
+		SELECT id, user_id, problem_id, contest_id, language, code_url, verdict, 
+			   score, execution_time_ms, memory_used_kb, test_cases_passed, test_cases_total,
+			   compile_output, is_public, submitted_at, judged_at
+		FROM execution.submissions 
+		WHERE verdict = 'AC' AND judged_at IS NOT NULL
+		AND id NOT IN (
+			SELECT DISTINCT submission1_id FROM execution.plagiarism_reports
+			UNION
+			SELECT DISTINCT submission2_id FROM execution.plagiarism_reports
+		)
+		ORDER BY submitted_at DESC
+		LIMIT $1`
+
+	var submissions []models.Submission
+	err := db.conn.SelectContext(ctx, &submissions, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get unchecked submissions: %w", err)
+	}
+
+	return submissions, nil
+}
+
+func (db *DB) GetPreviousSubmissions(ctx context.Context, problemID, currentSubmissionID int64) ([]models.Submission, error) {
+	query := `
+		SELECT id, user_id, problem_id, contest_id, language, code_url, verdict, 
+			   score, execution_time_ms, memory_used_kb, test_cases_passed, test_cases_total,
+			   compile_output, is_public, submitted_at, judged_at
+		FROM execution.submissions 
+		WHERE problem_id = $1 AND id != $2 AND verdict = 'AC'
+		ORDER BY submitted_at DESC
+		LIMIT 100` // Limit to last 100 submissions for performance
+
+	var submissions []models.Submission
+	err := db.conn.SelectContext(ctx, &submissions, query, problemID, currentSubmissionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous submissions: %w", err)
+	}
+
+	return submissions, nil
+}
+
+func (db *DB) CreatePlagiarismReport(ctx context.Context, report *models.PlagiarismReport) error {
+	query := `
+		INSERT INTO execution.plagiarism_reports 
+		(submission1_id, submission2_id, similarity_score, algorithm, is_reviewed, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, created_at`
+
+	err := db.conn.QueryRowContext(ctx, query,
+		report.Submission1ID,
+		report.Submission2ID,
+		report.SimilarityScore,
+		report.Algorithm,
+		report.IsReviewed,
+		report.Status,
+	).Scan(&report.ID, &report.CreatedAt)
+
+	if err != nil {
+		return fmt.Errorf("failed to create plagiarism report: %w", err)
+	}
+
+	return nil
+}
+
+func (db *DB) GetPlagiarismReports(ctx context.Context, limit, offset int) ([]models.PlagiarismReport, error) {
+	query := `
+		SELECT id, submission1_id, submission2_id, similarity_score, algorithm, 
+			   is_reviewed, reviewer_id, status, created_at
+		FROM execution.plagiarism_reports 
+		ORDER BY similarity_score DESC, created_at DESC
+		LIMIT $1 OFFSET $2`
+
+	var reports []models.PlagiarismReport
+	err := db.conn.SelectContext(ctx, &reports, query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get plagiarism reports: %w", err)
+	}
+
+	return reports, nil
+}
+
+func (db *DB) UpdatePlagiarismReportStatus(ctx context.Context, reportID int64, status string, reviewerID *int64) error {
+	query := `
+		UPDATE execution.plagiarism_reports 
+		SET status = $1, reviewer_id = $2, is_reviewed = true
+		WHERE id = $3`
+
+	_, err := db.conn.ExecContext(ctx, query, status, reviewerID, reportID)
+	if err != nil {
+		return fmt.Errorf("failed to update plagiarism report: %w", err)
+	}
+
+	return nil
+}
