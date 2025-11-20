@@ -1,0 +1,38 @@
+# Default seccomp policy for code execution
+# Allow only essential syscalls for program execution
+
+# Process management
+allow: execve, exit, exit_group, rt_sigreturn, sigreturn
+
+# Memory management  
+allow: brk, mmap, mmap2, munmap, mprotect, mremap, msync, mincore, madvise, shmget, shmat, shmdt, shmctl
+
+# File I/O (restricted to stdin/stdout/stderr)
+allow: read, write, pread, pwrite, readv, writev, preadv, pwritev, lseek, llseek, _llseek, fcntl, fcntl64, dup, dup2, dup3, close
+
+# Time and scheduling
+allow: time, gettimeofday, clock_gettime, clock_getres, nanosleep, clock_nanosleep, sched_yield, getpid, getppid, gettid
+
+# Signal handling (limited)
+allow: rt_sigaction, rt_sigprocmask, rt_sigpending, rt_sigtimedwait, kill, tgkill
+
+# Thread synchronization
+allow: futex, set_robust_list, get_robust_list
+
+# Essential system info
+allow: uname, getuid, getgid, geteuid, getegid, arch_prctl
+
+# Network syscalls - BLOCKED
+# block: socket, bind, listen, accept, connect, send, recv, sendto, recvfrom
+
+# Process creation - BLOCKED  
+# block: fork, vfork, clone, ptrace
+
+# System administration - BLOCKED
+# block: mount, umount, reboot, setuid, setgid, sethostname, chroot
+
+# Device access - BLOCKED
+# block: openat with device files, ioctl with device operations
+
+# Default deny policy
+default: deny

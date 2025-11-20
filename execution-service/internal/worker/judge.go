@@ -30,6 +30,7 @@ type JudgeWorker struct {
 	validator           *validation.CodeValidator
 	customChecker       *checker.CustomChecker
 	resourceValidator   *services.ResourceValidationService
+	circuitBreaker      *services.CircuitBreakerService
 	plagiarismEnqueuer  func(submissionID, userID, problemID int64, language, codeURL string)
 	currentJob          *models.JudgeRequest
 	isProcessing        bool
@@ -51,11 +52,15 @@ type JudgePool struct {
 	sandbox             *sandbox.IsolateSandbox
 	customChecker       *checker.CustomChecker
 	workerCount         int
+	minWorkers          int
+	maxWorkers          int
 	heartbeatInterval   time.Duration
 	healthCheckInterval time.Duration
+	autoScaleInterval   time.Duration
 	maxWorkerFailures   int
 	shutdownTimeout     time.Duration
 	isRunning           bool
+	autoScalingEnabled  bool
 	mutex               sync.RWMutex
 }
 
@@ -79,6 +84,7 @@ func NewJudgePool(workerCount int, db *database.DB, q *queue.RabbitMQClient, s *
 			validator:           validator,
 			customChecker:       customChecker,
 			resourceValidator:   resourceValidator,
+			circuitBreaker:      services.NewCircuitBreakerService(),
 			maxFailures:         3,
 			healthCheckInterval: 30 * time.Second,
 			recoveryInterval:    60 * time.Second,
@@ -109,10 +115,14 @@ func NewJudgePool(workerCount int, db *database.DB, q *queue.RabbitMQClient, s *
 		sandbox:             sb,
 		customChecker:       customChecker,
 		workerCount:         workerCount,
+		minWorkers:          2,
+		maxWorkers:          20,
 		heartbeatInterval:   15 * time.Second,
 		healthCheckInterval: 30 * time.Second,
+		autoScaleInterval:   30 * time.Second,
 		maxWorkerFailures:   3,
 		shutdownTimeout:     30 * time.Second,
+		autoScalingEnabled:  true,
 	}
 }
 
@@ -132,6 +142,11 @@ func (jp *JudgePool) Start(ctx context.Context) error {
 
 	// Start heartbeat reporter
 	go jp.heartbeatReporter(ctx)
+
+	// Start auto-scaling if enabled
+	if jp.autoScalingEnabled {
+		go jp.autoScaler(ctx)
+	}
 
 	// Start all workers
 	for _, worker := range jp.workers {
@@ -224,9 +239,15 @@ func (jw *JudgeWorker) processMessage(ctx context.Context, msg amqp.Delivery) {
 }
 
 func (jw *JudgeWorker) processSubmission(ctx context.Context, request *models.JudgeRequest) error {
-	code, err := jw.storage.DownloadCode(ctx, request.CodeURL)
+	// Use circuit breaker for storage operations
+	var code []byte
+	_, err := jw.circuitBreaker.Execute("minio", func() (interface{}, error) {
+		downloadedCode, downloadErr := jw.storage.DownloadCode(ctx, request.CodeURL)
+		code = downloadedCode
+		return nil, downloadErr
+	})
 	if err != nil {
-		return fmt.Errorf("failed to download code: %w", err)
+		return fmt.Errorf("failed to download code (circuit breaker open): %w", err)
 	}
 
 	jw.logInfo(request.SubmissionID, "Starting advanced code validation")
@@ -428,11 +449,17 @@ func (jw *JudgeWorker) processSubmission(ctx context.Context, request *models.Ju
 }
 
 func (jw *JudgeWorker) getTestCases(ctx context.Context, problemID int64) ([]models.TestCase, error) {
-	contentClient := httpclient.NewContentServiceClient("http://localhost:3002")
+	// Use circuit breaker for content service calls
+	var testCaseResponses []httpclient.TestCaseResponse
+	_, err := jw.circuitBreaker.Execute("content-service", func() (interface{}, error) {
+		contentClient := httpclient.NewContentServiceClient("http://localhost:3002")
+		responses, getErr := contentClient.GetTestCases(ctx, problemID)
+		testCaseResponses = responses
+		return nil, getErr
+	})
 
-	testCaseResponses, err := contentClient.GetTestCases(ctx, problemID)
 	if err != nil {
-		jw.logError(problemID, fmt.Sprintf("Failed to get test cases from content service: %v", err))
+		jw.logError(problemID, fmt.Sprintf("Failed to get test cases from content service (circuit breaker open): %v", err))
 
 		testCases := []models.TestCase{
 			{
@@ -875,4 +902,125 @@ func (jw *JudgeWorker) markHealthy() {
 	jw.isHealthy = true
 	jw.failureCount = 0
 	jw.mutex.Unlock()
+}
+
+func (jp *JudgePool) autoScaler(ctx context.Context) {
+	ticker := time.NewTicker(jp.autoScaleInterval)
+	defer ticker.Stop()
+
+	log.Printf("Starting auto-scaler with %d min workers, %d max workers", jp.minWorkers, jp.maxWorkers)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("Auto-scaler shutting down")
+			return
+		case <-ticker.C:
+			jp.performAutoScaling(ctx)
+		}
+	}
+}
+
+func (jp *JudgePool) performAutoScaling(ctx context.Context) {
+	jp.mutex.RLock()
+	currentWorkers := jp.workerCount
+	jp.mutex.RUnlock()
+
+	// Get current queue metrics
+	queueSize, err := jp.queue.GetQueueInfo()
+	if err != nil {
+		log.Printf("Failed to get queue info for auto-scaling: %v", err)
+		return
+	}
+
+	// Get active workers count
+	activeWorkers := 0
+	for _, worker := range jp.workers {
+		worker.mutex.RLock()
+		if worker.isProcessing {
+			activeWorkers++
+		}
+		worker.mutex.RUnlock()
+	}
+
+	// Calculate optimal worker count
+	optimalWorkers := jp.calculateOptimalWorkers(queueSize, activeWorkers, currentWorkers)
+
+	if optimalWorkers != currentWorkers {
+		log.Printf("Auto-scaling: %d -> %d workers (queue: %d, active: %d)",
+			currentWorkers, optimalWorkers, queueSize, activeWorkers)
+
+		err := jp.ScaleWorkers(optimalWorkers)
+		if err != nil {
+			log.Printf("Auto-scaling failed: %v", err)
+		}
+	}
+}
+
+func (jp *JudgePool) calculateOptimalWorkers(queueSize, activeWorkers, currentWorkers int) int {
+	// Scaling factors
+	scaleUpThreshold := 3     // Scale up if queue size > active workers * 3
+	scaleDownThreshold := 0.5 // Scale down if queue size < active workers * 0.5
+	maxScaleUp := 5           // Maximum workers to add at once
+	maxScaleDown := 3         // Maximum workers to remove at once
+
+	// Calculate desired workers based on queue load
+	var desiredWorkers int
+
+	if queueSize == 0 {
+		// No queue - scale down to minimum
+		desiredWorkers = jp.minWorkers
+	} else if queueSize > activeWorkers*scaleUpThreshold {
+		// High load - scale up aggressively
+		desiredWorkers = currentWorkers + maxScaleUp
+	} else if float64(queueSize) < float64(activeWorkers)*scaleDownThreshold && currentWorkers > jp.minWorkers {
+		// Low load - scale down gradually
+		desiredWorkers = currentWorkers - maxScaleDown
+	} else {
+		// Moderate load - maintain current level
+		desiredWorkers = currentWorkers
+	}
+
+	// Apply bounds
+	if desiredWorkers < jp.minWorkers {
+		desiredWorkers = jp.minWorkers
+	}
+	if desiredWorkers > jp.maxWorkers {
+		desiredWorkers = jp.maxWorkers
+	}
+
+	// Don't scale down if workers are busy
+	if desiredWorkers < currentWorkers && activeWorkers >= desiredWorkers {
+		desiredWorkers = currentWorkers
+	}
+
+	return desiredWorkers
+}
+
+func (jp *JudgePool) EnableAutoScaling() {
+	jp.mutex.Lock()
+	jp.autoScalingEnabled = true
+	jp.mutex.Unlock()
+	log.Printf("Auto-scaling enabled")
+}
+
+func (jp *JudgePool) DisableAutoScaling() {
+	jp.mutex.Lock()
+	jp.autoScalingEnabled = false
+	jp.mutex.Unlock()
+	log.Printf("Auto-scaling disabled")
+}
+
+func (jp *JudgePool) SetAutoScalingLimits(minWorkers, maxWorkers int) error {
+	if minWorkers < 1 || maxWorkers < minWorkers {
+		return fmt.Errorf("invalid limits: min=%d, max=%d", minWorkers, maxWorkers)
+	}
+
+	jp.mutex.Lock()
+	jp.minWorkers = minWorkers
+	jp.maxWorkers = maxWorkers
+	jp.mutex.Unlock()
+
+	log.Printf("Auto-scaling limits updated: min=%d, max=%d", minWorkers, maxWorkers)
+	return nil
 }

@@ -88,6 +88,7 @@ func (i *IsolateSandbox) Compile(ctx context.Context, language string, code []by
 		"--box-id=" + strconv.Itoa(boxID),
 		"--cg",
 		"--cg-timing",
+		"--seccomp=/etc/isolate/seccomp.policy",
 		"--processes=1",
 		"--mem=" + strconv.Itoa(memoryLimit),
 		"--time=" + strconv.Itoa(timeSec),
@@ -102,6 +103,9 @@ func (i *IsolateSandbox) Compile(ctx context.Context, language string, code []by
 		"--dir=/usr:noexec",
 		"--dir=/lib:noexec",
 		"--dir=/lib64:noexec",
+		"--dir=/tmp:rw",
+		"--dir=/box:rw",
+		"--net=none",
 		"--stdout=output.txt",
 		"--stderr=error.txt",
 		"--meta=meta.txt",
@@ -165,6 +169,7 @@ func (i *IsolateSandbox) Execute(ctx context.Context, language string, input []b
 		"--box-id=" + strconv.Itoa(boxID),
 		"--cg",
 		"--cg-timing",
+		"--seccomp=/etc/isolate/seccomp.policy",
 		"--processes=1",
 		"--mem=" + strconv.Itoa(memoryLimit),
 		"--time=" + strconv.Itoa(timeSec),
@@ -179,6 +184,9 @@ func (i *IsolateSandbox) Execute(ctx context.Context, language string, input []b
 		"--dir=/usr:noexec",
 		"--dir=/lib:noexec",
 		"--dir=/lib64:noexec",
+		"--dir=/tmp:rw",
+		"--dir=/box:rw",
+		"--net=none",
 		"--stdin=input.txt",
 		"--stdout=output.txt",
 		"--stderr=error.txt",
@@ -231,6 +239,16 @@ func (i *IsolateSandbox) parseExecutionResult(boxID int, exitCode int, timeLimit
 		if violation.Severity == "critical" {
 			result.Verdict = models.VerdictRuntime
 			result.Error = fmt.Sprintf("Security violation: %s", violation.Description)
+			break
+		}
+	}
+
+	// Validate sandbox environment after execution
+	sandboxViolations := i.securityValidator.ValidateSandboxEnvironment(boxID)
+	for _, violation := range sandboxViolations {
+		if violation.Severity == "critical" {
+			result.Verdict = models.VerdictRuntime
+			result.Error = fmt.Sprintf("Sandbox security violation: %s", violation.Description)
 			break
 		}
 	}

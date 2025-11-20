@@ -25,11 +25,13 @@ type Handler struct {
 	storage  *storage.MinIOClient
 	security *middleware.SecurityMiddleware
 	audit    *services.AuditLogService
+	metrics  *services.MetricsService
 }
 
 func NewHandler(db *database.DB, q *queue.RabbitMQClient, p *worker.JudgePool, s *storage.MinIOClient, jwtSecret string) *Handler {
 	securityMiddleware := middleware.NewSecurityMiddleware(jwtSecret)
 	auditService := services.NewAuditLogService(db)
+	metricsService := services.NewMetricsService()
 	return &Handler{
 		db:       db,
 		queue:    q,
@@ -37,6 +39,7 @@ func NewHandler(db *database.DB, q *queue.RabbitMQClient, p *worker.JudgePool, s
 		storage:  s,
 		security: securityMiddleware,
 		audit:    auditService,
+		metrics:  metricsService,
 	}
 }
 
@@ -85,6 +88,8 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	r.GET("/health", h.HealthCheck)
 	r.GET("/metrics", h.Metrics)
 	r.GET("/circuit-breakers", h.CircuitBreakerStatus)
+	r.GET("/prometheus", h.PrometheusMetrics)
+	r.GET("/cleanup-stats", h.CleanupStats)
 }
 
 func (h *Handler) CreateSubmission(c *gin.Context) {
@@ -573,4 +578,26 @@ func (h *Handler) CircuitBreakerStatus(c *gin.Context) {
 			"database":        "closed",
 		},
 	})
+}
+
+func (h *Handler) PrometheusMetrics(c *gin.Context) {
+	h.metrics.Handler().ServeHTTP(c.Writer, c.Request)
+}
+
+func (h *Handler) CleanupStats(c *gin.Context) {
+	config := &services.CleanupConfig{
+		SubmissionsRetention:       90 * 24 * time.Hour,  // 90 days
+		ExecutionLogsRetention:     30 * 24 * time.Hour,  // 30 days
+		TestResultsRetention:       60 * 24 * time.Hour,  // 60 days
+		PlagiarismReportsRetention: 180 * 24 * time.Hour, // 180 days
+		CleanupInterval:            24 * time.Hour,       // Daily
+	}
+	cleanupService := services.NewCleanupService(h.db, config)
+	stats, err := cleanupService.GetCleanupStats(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get cleanup stats"})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
 }

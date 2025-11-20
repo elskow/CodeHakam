@@ -228,3 +228,8 @@ func (cbs *CircuitBreakerService) GetCircuitBreaker(name string) *gobreaker.Circ
 		return gobreaker.NewCircuitBreaker(settings)
 	}
 }
+
+func (cbs *CircuitBreakerService) Execute(name string, operation func() (interface{}, error)) (interface{}, error) {
+	cb := cbs.GetCircuitBreaker(name)
+	return cb.Execute(operation)
+}
